@@ -1,97 +1,428 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 
-const MODE_COLORS = { cash: '#FF6F91', upi: '#8FCB9B', card: '#FFC857' };
+const MODE_COLORS = {
+  cash: '#FF6F91',
+  upi: '#8FCB9B',
+  card: '#FFC857',
+};
+
+const getLocalDate = () => {
+  const d = new Date();
+  const offset = d.getTimezoneOffset();
+  return new Date(d.getTime() - offset * 60000)
+    .toISOString()
+    .slice(0, 10);
+};
+
+const money = (value) =>
+  `₹${Number(value || 0).toLocaleString('en-IN', {
+    maximumFractionDigits: 0,
+  })}`;
 
 export default function DashboardPage() {
   const [data, setData] = useState(null);
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(getLocalDate());
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const load = () => api.get(`/dashboard?date=${date}`).then(setData).catch(() => setData(null));
+  const load = async (showRefresh = false) => {
+    try {
+      if (showRefresh) setRefreshing(true);
+      else setLoading(true);
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [date]);
+      const result = await api.get(`/dashboard?date=${date}`);
+      setData(result);
+    } catch (err) {
+      setData(null);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
 
-  if (!data) return <div className="card">Loading...</div>;
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line
+  }, [date]);
 
-  const maxHourly = Math.max(1, ...data.hourly.map(h => h.amount));
-  const activeHours = data.hourly.filter(h => h.amount > 0);
+  const activeHours = useMemo(() => {
+    if (!data?.hourly) return [];
+    return data.hourly.filter((h) => Number(h.amount) > 0);
+  }, [data]);
+
+  const maxHourly = useMemo(() => {
+    if (!data?.hourly?.length) return 1;
+    return Math.max(1, ...data.hourly.map((h) => Number(h.amount || 0)));
+  }, [data]);
+
+  const salesByPayment = useMemo(() => {
+    if (!data?.payment_breakdown) return [];
+
+    return data.payment_breakdown.map((p) => ({
+      ...p,
+      color: MODE_COLORS[p.mode] || '#999',
+    }));
+  }, [data]);
+
+  if (loading) {
+    return (
+      <div className="dashboard-loading">
+        <div className="dashboard-spinner" />
+        <div>Loading dashboard...</div>
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className="dashboard-error">
+        <div className="dashboard-error-icon">!</div>
+        <h3>Unable to load dashboard</h3>
+        <p>Please check your connection and try again.</p>
+
+        <button className="btn" onClick={() => load()}>
+          Try Again
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <div>
-      <div className="row" style={{ justifyContent: 'space-between', marginBottom: 14 }}>
-        <h3 style={{ margin: 0 }}>Dashboard</h3>
-        <input type="date" value={date} onChange={e => setDate(e.target.value)} />
-      </div>
+    <div className="dashboard-page">
 
-      <div className="row" style={{ alignItems: 'flex-start', gap: 16 }}>
-        <div className="stat-card stat-sales" style={{ flex: 1, minWidth: 260 }}>
-          <div className="stat-label">Total Sales · {data.date} · {data.total_bills} orders</div>
-          <div className="stat-value">₹{data.total_sales.toFixed(0)}</div>
+      {/* HEADER */}
+      <div className="dashboard-header">
+        <div>
+          <div className="dashboard-breadcrumb">
+            OVERVIEW / DASHBOARD
+          </div>
 
-          {data.total_sales > 0 && (
-            <div style={{ display: 'flex', height: 8, borderRadius: 4, overflow: 'hidden', margin: '12px 0' }}>
-              {data.payment_breakdown.map(p => (
-                <div key={p.mode} style={{ width: `${p.percent}%`, background: MODE_COLORS[p.mode] || '#999' }} />
-              ))}
-            </div>
-          )}
+          <h1>Good day 👋</h1>
 
-          {data.payment_breakdown.map(p => (
-            <div key={p.mode} className="row" style={{ justifyContent: 'space-between', marginBottom: 6 }}>
-              <span style={{ textTransform: 'capitalize' }}>
-                <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 5, background: MODE_COLORS[p.mode] || '#999', marginRight: 6 }} />
-                {p.mode}
-              </span>
-              <span>₹{p.amount.toFixed(0)} <span style={{ color: 'var(--chocolate)' }}>({p.percent}%)</span></span>
-            </div>
-          ))}
-          {data.payment_breakdown.length === 0 && <p style={{ color: 'var(--chocolate)' }}>No sales yet</p>}
+          <p>
+            Here's what's happening with your shop on{' '}
+            <strong>{data.date}</strong>
+          </p>
         </div>
 
-        <div className="card" style={{ flex: 2, minWidth: 300 }}>
-          <h4 style={{ marginTop: 0 }}>Sales by hour</h4>
-          {activeHours.length === 0 && <p style={{ color: 'var(--chocolate)' }}>No sales yet today</p>}
-          {activeHours.length > 0 && (
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 140 }}>
-              {data.hourly.map(h => (
-                <div key={h.hour} title={`${h.hour}:00 — ₹${h.amount.toFixed(0)}`} style={{
-                  flex: 1,
-                  height: `${(h.amount / maxHourly) * 100}%`,
-                  background: h.amount > 0 ? 'var(--iris)' : 'var(--line)',
-                  borderRadius: '4px 4px 0 0',
-                  minHeight: 2
-                }} />
-              ))}
-            </div>
-          )}
-          <div className="row" style={{ justifyContent: 'space-between', fontSize: 11, color: 'var(--chocolate)', marginTop: 4 }}>
-            <span>12am</span><span>6am</span><span>12pm</span><span>6pm</span><span>11pm</span>
+        <div className="dashboard-actions">
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="dashboard-date"
+          />
+
+          <button
+            className="btn dashboard-refresh"
+            onClick={() => load(true)}
+            disabled={refreshing}
+          >
+            {refreshing ? 'Refreshing...' : '↻ Refresh'}
+          </button>
+        </div>
+      </div>
+
+      {/* TOP KPI CARDS */}
+      <div className="dashboard-kpi-grid">
+
+        <div className="dashboard-kpi sales">
+          <div className="kpi-top">
+            <span className="kpi-label">TOTAL SALES</span>
+            <span className="kpi-icon">₹</span>
+          </div>
+
+          <div className="kpi-value">
+            {money(data.total_sales)}
+          </div>
+
+          <div className="kpi-bottom">
+            <span>{data.total_bills} orders</span>
+            <span>Today</span>
+          </div>
+        </div>
+
+        <div className="dashboard-kpi profit">
+          <div className="kpi-top">
+            <span className="kpi-label">GROSS PROFIT</span>
+            <span className="kpi-icon">↗</span>
+          </div>
+
+          <div className="kpi-value">
+            {money(data.gross_profit)}
+          </div>
+
+          <div className="kpi-bottom">
+            <span>After product cost</span>
+            <span>
+              COGS {money(data.total_cogs)}
+            </span>
+          </div>
+        </div>
+
+        <div className="dashboard-kpi net">
+          <div className="kpi-top">
+            <span className="kpi-label">NET PROFIT</span>
+            <span className="kpi-icon">✓</span>
+          </div>
+
+          <div className="kpi-value">
+            {money(data.net_profit)}
+          </div>
+
+          <div className="kpi-bottom">
+            <span>After expenses</span>
+            <span>
+              {money(data.total_expenses)} expenses
+            </span>
+          </div>
+        </div>
+
+        <div
+          className={`dashboard-kpi ${
+            data.low_stock_count > 0 ? 'warning' : 'stock-ok'
+          }`}
+        >
+          <div className="kpi-top">
+            <span className="kpi-label">LOW STOCK</span>
+            <span className="kpi-icon">!</span>
+          </div>
+
+          <div className="kpi-value">
+            {data.low_stock_count}
+          </div>
+
+          <div className="kpi-bottom">
+            <span>
+              {data.low_stock_count > 0
+                ? 'Items need attention'
+                : 'Stock looks good'}
+            </span>
           </div>
         </div>
       </div>
 
-      <div className="row" style={{ gap: 16, marginTop: 16 }}>
-        <div className={`stat-card ${data.gross_profit >= 0 ? 'stat-profit' : 'stat-loss'}`} style={{ flex: 1, minWidth: 200 }}>
-          <div className="stat-label">Gross Profit</div>
-          <div className="stat-value">₹{data.gross_profit.toFixed(0)}</div>
-          <div style={{ fontSize: 12, color: 'var(--chocolate)', marginTop: 4 }}>Sales − Cost of Goods (₹{data.total_cogs.toFixed(0)})</div>
-        </div>
+      {/* MAIN ROW */}
+      <div className="dashboard-main-grid">
 
-        <div className={`stat-card ${data.net_profit >= 0 ? 'stat-profit' : 'stat-loss'}`} style={{ flex: 1, minWidth: 200 }}>
-          <div className="stat-label">Net Profit</div>
-          <div className="stat-value">₹{data.net_profit.toFixed(0)}</div>
-          <div style={{ fontSize: 12, color: 'var(--chocolate)', marginTop: 4 }}>After expenses (₹{data.total_expenses.toFixed(0)})</div>
-        </div>
-
-        <div className={`stat-card ${data.low_stock_count > 0 ? 'stat-alert' : 'stat-profit'}`} style={{ flex: 1, minWidth: 200 }}>
-          <div className="stat-label">Low Stock Items</div>
-          <div className="stat-value">{data.low_stock_count}</div>
-          {data.low_stock_items.slice(0, 3).map(item => (
-            <div key={item.id} style={{ fontSize: 12, color: 'var(--chocolate)' }}>
-              {item.name}: {item.current_stock} {item.unit}
+        {/* HOURLY SALES */}
+        <div className="dashboard-card sales-chart-card">
+          <div className="dashboard-card-header">
+            <div>
+              <h3>Sales Overview</h3>
+              <p>Hourly sales performance</p>
             </div>
-          ))}
+
+            <div className="chart-total">
+              {money(data.total_sales)}
+            </div>
+          </div>
+
+          {activeHours.length === 0 ? (
+            <div className="empty-dashboard">
+              <div className="empty-icon">₹</div>
+              <strong>No sales yet</strong>
+              <span>Sales will appear here once billing starts.</span>
+            </div>
+          ) : (
+            <>
+              <div className="sales-chart">
+                {data.hourly.map((h) => {
+                  const amount = Number(h.amount || 0);
+                  const height =
+                    amount > 0
+                      ? Math.max((amount / maxHourly) * 100, 4)
+                      : 2;
+
+                  return (
+                    <div className="chart-column" key={h.hour}>
+                      <div className="chart-tooltip">
+                        {h.hour}:00
+                        <br />
+                        {money(amount)}
+                      </div>
+
+                      <div
+                        className={`chart-bar ${
+                          amount > 0 ? 'has-sales' : 'no-sales'
+                        }`}
+                        style={{ height: `${height}%` }}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="chart-labels">
+                <span>12 AM</span>
+                <span>6 AM</span>
+                <span>12 PM</span>
+                <span>6 PM</span>
+                <span>11 PM</span>
+              </div>
+            </>
+          )}
         </div>
+
+        {/* PAYMENT BREAKDOWN */}
+        <div className="dashboard-card payment-card">
+          <div className="dashboard-card-header">
+            <div>
+              <h3>Payment Methods</h3>
+              <p>Today's collection</p>
+            </div>
+          </div>
+
+          {salesByPayment.length === 0 ? (
+            <div className="empty-dashboard small">
+              No payments recorded yet.
+            </div>
+          ) : (
+            <>
+              <div className="payment-total">
+                {money(data.total_sales)}
+              </div>
+
+              <div className="payment-bar">
+                {salesByPayment.map((p) => (
+                  <div
+                    key={p.mode}
+                    className="payment-segment"
+                    style={{
+                      width: `${p.percent}%`,
+                      background: p.color,
+                    }}
+                  />
+                ))}
+              </div>
+
+              <div className="payment-list">
+                {salesByPayment.map((p) => (
+                  <div className="payment-row" key={p.mode}>
+                    <div className="payment-name">
+                      <span
+                        className="payment-dot"
+                        style={{ background: p.color }}
+                      />
+
+                      <span>
+                        {p.mode.charAt(0).toUpperCase() +
+                          p.mode.slice(1)}
+                      </span>
+                    </div>
+
+                    <div className="payment-amount">
+                      <strong>{money(p.amount)}</strong>
+                      <span>{p.percent}%</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* BOTTOM ROW */}
+      <div className="dashboard-bottom-grid">
+
+        {/* PROFIT SUMMARY */}
+        <div className="dashboard-card">
+          <div className="dashboard-card-header">
+            <div>
+              <h3>Profit Summary</h3>
+              <p>Today's financial overview</p>
+            </div>
+          </div>
+
+          <div className="profit-list">
+
+            <div className="profit-row">
+              <span>Sales</span>
+              <strong>{money(data.total_sales)}</strong>
+            </div>
+
+            <div className="profit-row">
+              <span>Cost of Goods</span>
+              <strong className="negative">
+                − {money(data.total_cogs)}
+              </strong>
+            </div>
+
+            <div className="profit-divider" />
+
+            <div className="profit-row gross">
+              <span>Gross Profit</span>
+              <strong>{money(data.gross_profit)}</strong>
+            </div>
+
+            <div className="profit-row">
+              <span>Expenses</span>
+              <strong className="negative">
+                − {money(data.total_expenses)}
+              </strong>
+            </div>
+
+            <div className="profit-divider" />
+
+            <div className="profit-row net-profit">
+              <span>Net Profit</span>
+              <strong>{money(data.net_profit)}</strong>
+            </div>
+
+          </div>
+        </div>
+
+        {/* LOW STOCK */}
+        <div className="dashboard-card">
+          <div className="dashboard-card-header">
+            <div>
+              <h3>Stock Alerts</h3>
+              <p>Items that need attention</p>
+            </div>
+
+            <span
+              className={`stock-badge ${
+                data.low_stock_count > 0 ? 'danger' : 'success'
+              }`}
+            >
+              {data.low_stock_count > 0
+                ? `${data.low_stock_count} Alerts`
+                : 'All Good'}
+            </span>
+          </div>
+
+          {data.low_stock_count === 0 ? (
+            <div className="stock-empty">
+              <div className="stock-check">✓</div>
+              <strong>Everything looks good</strong>
+              <span>No low-stock items right now.</span>
+            </div>
+          ) : (
+            <div className="stock-alert-list">
+              {data.low_stock_items.slice(0, 5).map((item) => (
+                <div className="stock-alert-row" key={item.id}>
+                  <div className="stock-item-icon">
+                    !
+                  </div>
+
+                  <div className="stock-item-info">
+                    <strong>{item.name}</strong>
+                    <span>
+                      Current stock: {item.current_stock} {item.unit}
+                    </span>
+                  </div>
+
+                  <span className="stock-low-text">
+                    Low
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
       </div>
     </div>
   );

@@ -2,80 +2,656 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../api';
 
 const ADVICE_STYLE = {
-  high: { border: 'stat-alert', icon: '🔥' },
-  moderate: { border: 'stat-sales', icon: '☀️' },
-  low: { border: '', icon: '🌤️' }
+  high: {
+    className: 'insight-demand-high',
+    icon: '🔥',
+    title: 'High demand opportunity',
+  },
+  moderate: {
+    className: 'insight-demand-moderate',
+    icon: '☀️',
+    title: 'Moderate demand',
+  },
+  low: {
+    className: 'insight-demand-low',
+    icon: '🌤️',
+    title: 'Normal demand',
+  },
 };
 
 export default function InsightsPage() {
   const [weather, setWeather] = useState(null);
   const [weatherError, setWeatherError] = useState(null);
   const [suggestions, setSuggestions] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const loadInsights = async () => {
+    setLoading(true);
+    setWeatherError(null);
+
+    try {
+      const [weatherResult, suggestionsResult] =
+        await Promise.allSettled([
+          api.get('/insights/weather'),
+          api.get('/insights/purchase-suggestions'),
+        ]);
+
+      if (weatherResult.status === 'fulfilled') {
+        setWeather(weatherResult.value);
+      } else {
+        setWeather(null);
+        setWeatherError(weatherResult.reason?.message || 'Unable to load weather');
+      }
+
+      if (suggestionsResult.status === 'fulfilled') {
+        setSuggestions(suggestionsResult.value);
+      } else {
+        setSuggestions(null);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    api.get('/insights/weather').then(setWeather).catch(e => setWeatherError(e.message));
-    api.get('/insights/purchase-suggestions').then(setSuggestions).catch(() => setSuggestions(null));
+    loadInsights();
   }, []);
 
-  return (
-    <div>
-      <h3 style={{ marginBottom: 16 }}>Insights</h3>
+  const advice = weather?.advice
+    ? ADVICE_STYLE[weather.advice.level] || ADVICE_STYLE.low
+    : ADVICE_STYLE.low;
 
-      <div className="card">
-        <h4 style={{ marginTop: 0 }}>🌦️ Weather & Demand</h4>
-        {weatherError && <p style={{ color: 'var(--chocolate)' }}>Couldn't load weather right now — check your internet connection.</p>}
-        {weather && (
+  const suggestionRows = suggestions?.suggestions || [];
+
+  const urgentItems = suggestionRows.filter(
+    (item) =>
+      item.days_of_stock_left != null &&
+      Number(item.days_of_stock_left) < 3
+  );
+
+  const totalSuggestedCost = suggestionRows.reduce(
+    (sum, item) => sum + Number(item.estimated_cost || 0),
+    0
+  );
+
+  return (
+    <div className="insights-page">
+
+      {/* HEADER */}
+      <div className="insights-header">
+
+        <div>
+          <div className="insights-breadcrumb">
+            FINANCE / INSIGHTS
+          </div>
+
+          <h1>Insights</h1>
+
+          <p>
+            Smart demand and inventory recommendations for your shop
+          </p>
+        </div>
+
+        <button
+          className="insights-refresh-btn"
+          onClick={loadInsights}
+          disabled={loading}
+        >
+          ↻ {loading ? 'Refreshing...' : 'Refresh'}
+        </button>
+
+      </div>
+
+
+      {/* QUICK SUMMARY */}
+      <div className="insights-summary-grid">
+
+        <div className="insight-summary-card">
+
+          <div className="insight-summary-icon purple">
+            ☀️
+          </div>
+
           <div>
-            {weather.advice && (
-              <div className={`stat-card ${ADVICE_STYLE[weather.advice.level]?.border || ''}`} style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 15 }}>{ADVICE_STYLE[weather.advice.level]?.icon} {weather.advice.message}</div>
-              </div>
-            )}
-            <div className="row" style={{ gap: 12 }}>
-              {weather.days.map(d => (
-                <div key={d.date} className="card" style={{ flex: 1, minWidth: 140, textAlign: 'center' }}>
-                  <div style={{ fontSize: 12, color: 'var(--chocolate)' }}>{d.date}</div>
-                  <div style={{ fontFamily: 'Baloo 2', fontSize: 22, fontWeight: 700 }}>{d.max_temp}°C</div>
-                  <div style={{ fontSize: 12, color: 'var(--chocolate)' }}>Low {d.min_temp}°C</div>
-                </div>
-              ))}
+            <span>Demand Outlook</span>
+
+            <strong>
+              {weather?.advice
+                ? weather.advice.level
+                  ? weather.advice.level.charAt(0).toUpperCase() +
+                    weather.advice.level.slice(1)
+                  : 'Normal'
+                : '—'}
+            </strong>
+
+            <small>
+              Based on current weather
+            </small>
+          </div>
+
+        </div>
+
+
+        <div className="insight-summary-card">
+
+          <div className="insight-summary-icon orange">
+            📦
+          </div>
+
+          <div>
+            <span>Purchase Suggestions</span>
+
+            <strong>
+              {suggestionRows.length}
+            </strong>
+
+            <small>
+              Materials need attention
+            </small>
+          </div>
+
+        </div>
+
+
+        <div className="insight-summary-card">
+
+          <div className="insight-summary-icon red">
+            !
+          </div>
+
+          <div>
+            <span>Urgent Stock</span>
+
+            <strong>
+              {urgentItems.length}
+            </strong>
+
+            <small>
+              Less than 3 days stock
+            </small>
+          </div>
+
+        </div>
+
+
+        <div className="insight-summary-card">
+
+          <div className="insight-summary-icon green">
+            ₹
+          </div>
+
+          <div>
+            <span>Estimated Purchase</span>
+
+            <strong>
+              ₹{totalSuggestedCost.toLocaleString('en-IN', {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0,
+              })}
+            </strong>
+
+            <small>
+              Suggested order value
+            </small>
+          </div>
+
+        </div>
+
+      </div>
+
+
+      {/* WEATHER */}
+      <section className="insight-section">
+
+        <div className="insight-section-header">
+
+          <div>
+
+            <div className="insight-mini-label">
+              DEMAND INTELLIGENCE
+            </div>
+
+            <h2>
+              Weather & Demand
+            </h2>
+
+            <p>
+              Use weather conditions to understand potential ice-cream demand.
+            </p>
+
+          </div>
+
+          <div className="insight-section-icon">
+            🌦️
+          </div>
+
+        </div>
+
+
+        {weatherError && (
+          <div className="insight-error">
+            <span>⚠️</span>
+
+            <div>
+              <strong>
+                Weather data unavailable
+              </strong>
+
+              <p>
+                Couldn't load weather right now. Check your internet
+                connection and try refreshing.
+              </p>
             </div>
           </div>
         )}
-        {!weather && !weatherError && <p>Loading forecast...</p>}
+
+
+        {!weather && !weatherError && (
+          <div className="insight-loading">
+            <div className="insight-spinner">
+              ◌
+            </div>
+
+            <strong>
+              Loading weather insights...
+            </strong>
+          </div>
+        )}
+
+
+        {weather && (
+          <>
+
+            {/* DEMAND ADVICE */}
+            {weather.advice && (
+              <div
+                className={`insight-demand-banner ${advice.className}`}
+              >
+
+                <div className="insight-demand-icon">
+                  {advice.icon}
+                </div>
+
+                <div className="insight-demand-content">
+
+                  <span>
+                    {advice.title}
+                  </span>
+
+                  <strong>
+                    {weather.advice.message}
+                  </strong>
+
+                </div>
+
+                <div className="insight-demand-tag">
+                  {String(
+                    weather.advice.level || 'normal'
+                  ).toUpperCase()}
+                </div>
+
+              </div>
+            )}
+
+
+            {/* FORECAST */}
+            <div className="insight-forecast-card">
+
+              <div className="insight-forecast-heading">
+
+                <div>
+                  <h3>
+                    Upcoming Forecast
+                  </h3>
+
+                  <span>
+                    Plan your stock based on the next few days.
+                  </span>
+                </div>
+
+              </div>
+
+
+              <div className="insight-weather-grid">
+
+                {weather.days?.map((day, index) => (
+
+                  <div
+                    key={day.date || index}
+                    className="insight-weather-day"
+                  >
+
+                    <div className="weather-day-top">
+
+                      <span>
+                        {index === 0
+                          ? 'TODAY'
+                          : day.date}
+                      </span>
+
+                      <span className="weather-day-icon">
+                        {Number(day.max_temp) >= 32
+                          ? '☀️'
+                          : Number(day.max_temp) >= 28
+                          ? '🌤️'
+                          : '☁️'}
+                      </span>
+
+                    </div>
+
+
+                    <strong>
+                      {day.max_temp}°C
+                    </strong>
+
+
+                    <div className="weather-low">
+                      Low {day.min_temp}°C
+                    </div>
+
+
+                    <div className="weather-temperature-bar">
+
+                      <div
+                        style={{
+                          width: `${Math.min(
+                            100,
+                            Math.max(
+                              10,
+                              Number(day.max_temp || 0) * 2
+                            )
+                          )}%`,
+                        }}
+                      />
+
+                    </div>
+
+                  </div>
+
+                ))}
+
+              </div>
+
+            </div>
+
+          </>
+        )}
+
+      </section>
+
+
+      {/* PURCHASE SUGGESTIONS */}
+      <section className="insight-section">
+
+        <div className="insight-section-header">
+
+          <div>
+
+            <div className="insight-mini-label">
+              INVENTORY INTELLIGENCE
+            </div>
+
+            <h2>
+              Suggested Purchases
+            </h2>
+
+            <p>
+              Recommended raw material purchases based on stock levels
+              and recent consumption.
+            </p>
+
+          </div>
+
+          <div className="insight-section-icon">
+            📦
+          </div>
+
+        </div>
+
+
+        {suggestions && suggestionRows.length > 0 && (
+
+          <div className="insight-purchase-card">
+
+            {/* TABLE HEADER */}
+            <div className="insight-purchase-header">
+
+              <div>
+                <strong>
+                  Reorder Recommendations
+                </strong>
+
+                <span>
+                  {suggestionRows.length} materials need attention
+                </span>
+              </div>
+
+              <div className="insight-order-value">
+                <span>
+                  Estimated order
+                </span>
+
+                <strong>
+                  ₹{totalSuggestedCost.toLocaleString('en-IN', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                </strong>
+              </div>
+
+            </div>
+
+
+            {/* TABLE */}
+            <div className="insight-table-wrap">
+
+              <table className="insight-table">
+
+                <thead>
+
+                  <tr>
+                    <th>RAW MATERIAL</th>
+                    <th>CURRENT STOCK</th>
+                    <th>AVG. DAILY USE</th>
+                    <th>DAYS LEFT</th>
+                    <th>SUGGESTED ORDER</th>
+                    <th>EST. COST</th>
+                  </tr>
+
+                </thead>
+
+
+                <tbody>
+
+                  {suggestionRows.map((item) => {
+
+                    const daysLeft =
+                      item.days_of_stock_left != null
+                        ? Number(item.days_of_stock_left)
+                        : null;
+
+                    const status =
+                      daysLeft != null && daysLeft < 3
+                        ? 'urgent'
+                        : daysLeft != null && daysLeft < 7
+                        ? 'warning'
+                        : 'normal';
+
+                    return (
+                      <tr key={item.raw_material_id}>
+
+                        <td>
+
+                          <div className="insight-material">
+
+                            <div className="insight-material-icon">
+                              ◈
+                            </div>
+
+                            <div>
+                              <strong>
+                                {item.name}
+                              </strong>
+
+                              <span>
+                                Raw material
+                              </span>
+                            </div>
+
+                          </div>
+
+                        </td>
+
+
+                        <td>
+
+                          <strong>
+                            {Number(item.current_stock || 0).toFixed(2)}
+                          </strong>
+
+                          <span className="insight-unit">
+                            {item.unit}
+                          </span>
+
+                        </td>
+
+
+                        <td>
+
+                          {item.avg_daily_consumption}{' '}
+                          {item.unit}/day
+
+                        </td>
+
+
+                        <td>
+
+                          <span
+                            className={`insight-days-badge ${status}`}
+                          >
+
+                            {daysLeft != null
+                              ? `${daysLeft} days`
+                              : '—'}
+
+                          </span>
+
+                        </td>
+
+
+                        <td>
+
+                          <strong className="suggested-qty">
+                            {item.suggested_qty}{' '}
+                            {item.unit}
+                          </strong>
+
+                        </td>
+
+
+                        <td>
+
+                          <strong>
+                            {item.estimated_cost != null
+                              ? `₹${Number(
+                                  item.estimated_cost
+                                ).toLocaleString('en-IN', {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}`
+                              : '—'}
+                          </strong>
+
+                        </td>
+
+                      </tr>
+                    );
+                  })}
+
+                </tbody>
+
+              </table>
+
+            </div>
+
+          </div>
+
+        )}
+
+
+        {suggestions && suggestionRows.length === 0 && (
+
+          <div className="insight-all-good">
+
+            <div className="insight-all-good-icon">
+              ✓
+            </div>
+
+            <div>
+
+              <strong>
+                Everything looks good
+              </strong>
+
+              <p>
+                Nothing needs restocking right now. All raw materials
+                are above their reorder level.
+              </p>
+
+            </div>
+
+          </div>
+
+        )}
+
+
+        {!suggestions && !loading && (
+
+          <div className="insight-error">
+
+            <span>
+              ⚠️
+            </span>
+
+            <div>
+
+              <strong>
+                Purchase suggestions unavailable
+              </strong>
+
+              <p>
+                We couldn't load the current inventory recommendations.
+              </p>
+
+            </div>
+
+          </div>
+
+        )}
+
+      </section>
+
+
+      {/* FOOTER NOTE */}
+      <div className="insight-footer-note">
+
+        <span>
+          ✦
+        </span>
+
+        <div>
+          <strong>
+            Smart insights
+          </strong>
+
+          <p>
+            Recommendations are generated from your current inventory,
+            recent consumption and available weather information.
+          </p>
+        </div>
+
       </div>
 
-      <div className="card">
-        <h4 style={{ marginTop: 0 }}>📦 Suggested Purchases</h4>
-        <p style={{ fontSize: 13, color: 'var(--chocolate)', marginTop: -8 }}>
-          Based on raw materials at or below their reorder level, and your average consumption over the last 14 days.
-        </p>
-        {suggestions && suggestions.suggestions.length > 0 && (
-          <table>
-            <thead>
-              <tr>
-                <th>Raw Material</th><th>Current Stock</th><th>Avg Daily Use</th><th>Days Left</th><th>Suggested Order</th><th>Est. Cost</th>
-              </tr>
-            </thead>
-            <tbody>
-              {suggestions.suggestions.map(s => (
-                <tr key={s.raw_material_id}>
-                  <td>{s.name}</td>
-                  <td>{s.current_stock.toFixed(2)} {s.unit}</td>
-                  <td>{s.avg_daily_consumption} {s.unit}/day</td>
-                  <td style={{ color: s.days_of_stock_left != null && s.days_of_stock_left < 3 ? 'var(--danger-dark)' : 'inherit', fontWeight: 700 }}>
-                    {s.days_of_stock_left != null ? `${s.days_of_stock_left} days` : '-'}
-                  </td>
-                  <td style={{ fontWeight: 700 }}>{s.suggested_qty} {s.unit}</td>
-                  <td>{s.estimated_cost != null ? `₹${s.estimated_cost}` : '-'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        {suggestions && suggestions.suggestions.length === 0 && <p>Nothing needs restocking right now — all raw materials are above their reorder level.</p>}
-        {!suggestions && <p>Loading...</p>}
-      </div>
     </div>
   );
 }

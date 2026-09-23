@@ -1,126 +1,738 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 
+const money = (value) =>
+  `₹${Number(value || 0).toLocaleString('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+
 export default function ClosingPage() {
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(
+    new Date().toISOString().slice(0, 10)
+  );
+
   const [preview, setPreview] = useState(null);
   const [actualCash, setActualCash] = useState('');
   const [history, setHistory] = useState([]);
   const [result, setResult] = useState(null);
+  const [saving, setSaving] = useState(false);
 
-  const loadPreview = () => api.get(`/closing/preview?date=${date}`).then(setPreview).catch(() => setPreview(null));
-  const loadHistory = () => api.get('/closing/history').then(setHistory).catch(() => setHistory([]));
+  const loadPreview = () =>
+    api
+      .get(`/closing/preview?date=${date}`)
+      .then(setPreview)
+      .catch(() => setPreview(null));
 
-  useEffect(() => { loadPreview(); loadHistory(); /* eslint-disable-next-line */ }, [date]);
+  const loadHistory = () =>
+    api
+      .get('/closing/history')
+      .then(setHistory)
+      .catch(() => setHistory([]));
+
+  useEffect(() => {
+    loadPreview();
+    loadHistory();
+    setResult(null);
+
+    // eslint-disable-next-line
+  }, [date]);
 
   useEffect(() => {
     if (preview && preview.already_closed && preview.existing) {
-      setActualCash(String(preview.existing.actual_cash));
+      setActualCash(
+        String(preview.existing.actual_cash)
+      );
     } else {
       setActualCash('');
     }
   }, [preview]);
 
   const submitClosing = async () => {
-    if (actualCash === '') return alert('Enter the actual counted cash');
-    const res = await api.post('/closing', { date, actual_cash: Number(actualCash) });
-    setResult(res);
-    loadPreview();
-    loadHistory();
+    if (actualCash === '') {
+      alert('Enter the actual counted cash');
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      const res = await api.post('/closing', {
+        date,
+        actual_cash: Number(actualCash),
+      });
+
+      setResult(res);
+
+      await loadPreview();
+      await loadHistory();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  if (!preview) return <div className="card">Loading...</div>;
+  const difference = useMemo(() => {
+    if (actualCash === '') return null;
 
-  const difference = actualCash !== '' ? Number(actualCash) - preview.expected_cash : null;
+    return (
+      Number(actualCash) -
+      Number(preview?.expected_cash || 0)
+    );
+  }, [actualCash, preview]);
+
+  const differenceClass =
+    difference === null
+      ? ''
+      : difference === 0
+      ? 'closing-match'
+      : difference < 0
+      ? 'closing-short'
+      : 'closing-excess';
+
+  if (!preview) {
+    return (
+      <div className="closing-loading">
+        <div className="closing-loading-card">
+          <div className="closing-loading-icon">₹</div>
+          <strong>Loading day closing...</strong>
+          <span>
+            Preparing your sales and cash summary
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div>
-      <div className="row" style={{ justifyContent: 'space-between', marginBottom: 16 }}>
-        <h3 style={{ margin: 0 }}>Day Closing</h3>
-        <input type="date" value={date} onChange={e => setDate(e.target.value)} />
+    <div className="closing-page">
+
+      {/* =====================================================
+          HEADER
+          ===================================================== */}
+
+      <div className="closing-header">
+
+        <div>
+          <div className="closing-breadcrumb">
+            FINANCE / DAY CLOSING
+          </div>
+
+          <h1>Day Closing</h1>
+
+          <p>
+            Reconcile today's sales, expenses and
+            physical cash before closing the day.
+          </p>
+        </div>
+
+        <div className="closing-date-box">
+
+          <label>BUSINESS DATE</label>
+
+          <input
+            type="date"
+            value={date}
+            onChange={(e) =>
+              setDate(e.target.value)
+            }
+          />
+
+        </div>
+
       </div>
 
+      {/* =====================================================
+          ALREADY CLOSED
+          ===================================================== */}
+
       {preview.already_closed && (
-        <div className="card" style={{ background: '#e8f5e9' }}>
-          ✅ This day has already been closed. You can re-save if you need to correct the actual cash.
+        <div className="closing-status-banner">
+
+          <div className="closing-status-icon">
+            ✓
+          </div>
+
+          <div>
+            <strong>
+              This day has already been closed
+            </strong>
+
+            <span>
+              You can update the actual cash if
+              a correction is required.
+            </span>
+          </div>
+
+          <div className="closing-status-badge">
+            CLOSED
+          </div>
+
         </div>
       )}
 
-      <div className="row" style={{ gap: 16, alignItems: 'flex-start' }}>
-        <div className="card" style={{ flex: 1, minWidth: 280 }}>
-          <h4 style={{ marginTop: 0 }}>Sales</h4>
-          <div className="row" style={{ justifyContent: 'space-between' }}><span>Total Sales</span><strong>₹{preview.total_sales.toFixed(2)}</strong></div>
-          <div className="row" style={{ justifyContent: 'space-between' }}><span>Cash</span><span>₹{preview.cash_sales.toFixed(2)}</span></div>
-          <div className="row" style={{ justifyContent: 'space-between' }}><span>UPI</span><span>₹{preview.upi_sales.toFixed(2)}</span></div>
-          <div className="row" style={{ justifyContent: 'space-between' }}><span>Card</span><span>₹{preview.card_sales.toFixed(2)}</span></div>
-          <div className="row" style={{ justifyContent: 'space-between' }}><span>Bills</span><span>{preview.total_bills}</span></div>
+      {/* =====================================================
+          TOP SUMMARY
+          ===================================================== */}
 
-          <h4>Expenses</h4>
-          <div className="row" style={{ justifyContent: 'space-between' }}><span>Total Expenses</span><strong>₹{preview.total_expenses.toFixed(2)}</strong></div>
-          <div className="row" style={{ justifyContent: 'space-between' }}><span>Cash Expenses</span><span>₹{preview.cash_expenses.toFixed(2)}</span></div>
+      <div className="closing-summary-grid">
 
-          <h4>Profit</h4>
-          <div className="row" style={{ justifyContent: 'space-between' }}><span>Gross Profit</span><span>₹{preview.gross_profit.toFixed(2)}</span></div>
-          <div className="row" style={{ justifyContent: 'space-between' }}><span>Net Profit</span><span>₹{preview.net_profit.toFixed(2)}</span></div>
-        </div>
+        <div className="closing-stat-card">
 
-        <div className="card" style={{ flex: 1, minWidth: 280 }}>
-          <h4 style={{ marginTop: 0 }}>Cash Reconciliation</h4>
-          <div className="row" style={{ justifyContent: 'space-between' }}><span>Opening Cash</span><span>₹{preview.opening_cash.toFixed(2)}</span></div>
-          <div className="row" style={{ justifyContent: 'space-between' }}><span>+ Cash Sales</span><span>₹{preview.cash_sales.toFixed(2)}</span></div>
-          <div className="row" style={{ justifyContent: 'space-between' }}><span>- Cash Expenses</span><span>₹{preview.cash_expenses.toFixed(2)}</span></div>
-          <hr />
-          <div className="row" style={{ justifyContent: 'space-between', fontWeight: 700 }}><span>Expected Cash</span><span>₹{preview.expected_cash.toFixed(2)}</span></div>
-
-          <div style={{ marginTop: 16 }}>
-            <label>Actual Cash Counted</label>
-            <input type="number" style={{ width: '100%', marginTop: 4 }} value={actualCash} onChange={e => setActualCash(e.target.value)} />
+          <div className="closing-stat-icon sales">
+            ₹
           </div>
 
-          {difference !== null && (
-            <div className="row" style={{ justifyContent: 'space-between', marginTop: 10, fontWeight: 700 }}>
-              <span>Difference</span>
-              <span style={{ color: difference === 0 ? '#2e7d32' : difference < 0 ? '#d32f2f' : '#ef6c00' }}>
-                {difference > 0 ? '+' : ''}₹{difference.toFixed(2)}
+          <div>
+            <span>Total Sales</span>
+
+            <strong>
+              {money(preview.total_sales)}
+            </strong>
+
+            <small>
+              {preview.total_bills} bills
+            </small>
+          </div>
+
+        </div>
+
+        <div className="closing-stat-card">
+
+          <div className="closing-stat-icon expense">
+            −
+          </div>
+
+          <div>
+            <span>Total Expenses</span>
+
+            <strong>
+              {money(preview.total_expenses)}
+            </strong>
+
+            <small>
+              Cash {money(preview.cash_expenses)}
+            </small>
+          </div>
+
+        </div>
+
+        <div className="closing-stat-card">
+
+          <div className="closing-stat-icon profit">
+            ↗
+          </div>
+
+          <div>
+            <span>Net Profit</span>
+
+            <strong>
+              {money(preview.net_profit)}
+            </strong>
+
+            <small>
+              After expenses
+            </small>
+          </div>
+
+        </div>
+
+      </div>
+
+      {/* =====================================================
+          MAIN GRID
+          ===================================================== */}
+
+      <div className="closing-main-grid">
+
+        {/* =================================================
+            SALES + PROFIT
+            ================================================= */}
+
+        <div className="closing-panel">
+
+          <div className="closing-panel-header">
+
+            <div className="closing-panel-icon">
+              ₹
+            </div>
+
+            <div>
+              <h2>Sales & Profit</h2>
+
+              <p>
+                Financial summary for this day
+              </p>
+            </div>
+
+          </div>
+
+          <div className="closing-section">
+
+            <div className="closing-section-title">
+              SALES
+            </div>
+
+            <div className="closing-line total">
+
+              <span>Total Sales</span>
+
+              <strong>
+                {money(preview.total_sales)}
+              </strong>
+
+            </div>
+
+            <div className="closing-line">
+
+              <span>
+                <i className="closing-dot cash" />
+                Cash
               </span>
+
+              <span>
+                {money(preview.cash_sales)}
+              </span>
+
+            </div>
+
+            <div className="closing-line">
+
+              <span>
+                <i className="closing-dot upi" />
+                UPI
+              </span>
+
+              <span>
+                {money(preview.upi_sales)}
+              </span>
+
+            </div>
+
+            <div className="closing-line">
+
+              <span>
+                <i className="closing-dot card" />
+                Card
+              </span>
+
+              <span>
+                {money(preview.card_sales)}
+              </span>
+
+            </div>
+
+            <div className="closing-line">
+
+              <span>Bills</span>
+
+              <span>
+                {preview.total_bills}
+              </span>
+
+            </div>
+
+          </div>
+
+          <div className="closing-divider" />
+
+          <div className="closing-section">
+
+            <div className="closing-section-title">
+              EXPENSES
+            </div>
+
+            <div className="closing-line total">
+
+              <span>Total Expenses</span>
+
+              <strong>
+                {money(preview.total_expenses)}
+              </strong>
+
+            </div>
+
+            <div className="closing-line">
+
+              <span>Cash Expenses</span>
+
+              <span>
+                {money(preview.cash_expenses)}
+              </span>
+
+            </div>
+
+          </div>
+
+          <div className="closing-divider" />
+
+          <div className="closing-profit-box">
+
+            <div>
+
+              <span>Gross Profit</span>
+
+              <strong>
+                {money(preview.gross_profit)}
+              </strong>
+
+            </div>
+
+            <div>
+
+              <span>Net Profit</span>
+
+              <strong>
+                {money(preview.net_profit)}
+              </strong>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        {/* =================================================
+            CASH RECONCILIATION
+            ================================================= */}
+
+        <div className="closing-panel cash-panel">
+
+          <div className="closing-panel-header">
+
+            <div className="closing-panel-icon purple">
+              ₹
+            </div>
+
+            <div>
+              <h2>Cash Reconciliation</h2>
+
+              <p>
+                Compare expected cash with
+                physical cash
+              </p>
+            </div>
+
+          </div>
+
+          <div className="cash-calculation">
+
+            <div className="cash-calc-line">
+
+              <span>Opening Cash</span>
+
+              <strong>
+                {money(preview.opening_cash)}
+              </strong>
+
+            </div>
+
+            <div className="cash-calc-line">
+
+              <span>+ Cash Sales</span>
+
+              <strong className="positive">
+                {money(preview.cash_sales)}
+              </strong>
+
+            </div>
+
+            <div className="cash-calc-line">
+
+              <span>− Cash Expenses</span>
+
+              <strong className="negative">
+                {money(preview.cash_expenses)}
+              </strong>
+
+            </div>
+
+            <div className="cash-expected">
+
+              <span>Expected Cash</span>
+
+              <strong>
+                {money(preview.expected_cash)}
+              </strong>
+
+            </div>
+
+          </div>
+
+          {/* ACTUAL CASH */}
+
+          <div className="actual-cash-section">
+
+            <label>
+              ACTUAL CASH COUNTED
+            </label>
+
+            <div className="actual-cash-input">
+
+              <span>₹</span>
+
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="Enter counted cash"
+                value={actualCash}
+                onChange={(e) =>
+                  setActualCash(e.target.value)
+                }
+              />
+
+            </div>
+
+          </div>
+
+          {/* DIFFERENCE */}
+
+          {difference !== null && (
+            <div
+              className={`closing-difference ${differenceClass}`}
+            >
+
+              <div>
+
+                <span>
+                  {difference === 0
+                    ? 'Cash Matched'
+                    : difference < 0
+                    ? 'Cash Shortage'
+                    : 'Cash Excess'}
+                </span>
+
+                <small>
+                  Expected {money(
+                    preview.expected_cash
+                  )}
+                </small>
+
+              </div>
+
+              <strong>
+                {difference > 0 ? '+' : ''}
+                {money(difference)}
+              </strong>
+
             </div>
           )}
 
-          <button className="btn" style={{ width: '100%', marginTop: 16 }} onClick={submitClosing}>
-            {preview.already_closed ? 'Update Closing' : 'Close Day'}
+          <button
+            className="closing-submit-btn"
+            onClick={submitClosing}
+            disabled={saving}
+          >
+            <span>
+              {saving
+                ? 'Saving...'
+                : preview.already_closed
+                ? 'Update Closing'
+                : 'Close Day'}
+            </span>
+
+            {!saving && (
+              <span className="closing-submit-arrow">
+                →
+              </span>
+            )}
           </button>
+
         </div>
+
       </div>
 
+      {/* =====================================================
+          RESULT
+          ===================================================== */}
+
       {result && (
-        <div className="card" style={{ marginTop: 16, background: '#fff8e1' }}>
-          Saved — Expected ₹{result.expected_cash.toFixed(2)}, Actual ₹{result.actual_cash.toFixed(2)},
-          Difference {result.cash_difference > 0 ? '+' : ''}₹{result.cash_difference.toFixed(2)}
+        <div className="closing-result">
+
+          <div className="closing-result-icon">
+            ✓
+          </div>
+
+          <div>
+
+            <strong>
+              Day closing saved successfully
+            </strong>
+
+            <span>
+              Expected {money(result.expected_cash)}
+              {' • '}
+              Actual {money(result.actual_cash)}
+              {' • '}
+              Difference{' '}
+              {result.cash_difference > 0
+                ? '+'
+                : ''}
+              {money(result.cash_difference)}
+            </span>
+
+          </div>
+
         </div>
       )}
 
-      <div className="card" style={{ marginTop: 16 }}>
-        <h4 style={{ marginTop: 0 }}>Closing History</h4>
-        <table>
-          <thead><tr><th>Date</th><th>Sales</th><th>Expenses</th><th>Net Profit</th><th>Expected Cash</th><th>Actual Cash</th><th>Difference</th></tr></thead>
-          <tbody>
-            {history.map(h => (
-              <tr key={h.closing_date}>
-                <td>{h.closing_date}</td>
-                <td>₹{h.total_sales.toFixed(2)}</td>
-                <td>₹{h.total_expenses.toFixed(2)}</td>
-                <td>₹{h.net_profit.toFixed(2)}</td>
-                <td>₹{h.expected_cash.toFixed(2)}</td>
-                <td>₹{h.actual_cash.toFixed(2)}</td>
-                <td style={{ color: h.cash_difference === 0 ? '#2e7d32' : h.cash_difference < 0 ? '#d32f2f' : '#ef6c00' }}>
-                  {h.cash_difference > 0 ? '+' : ''}₹{h.cash_difference.toFixed(2)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {history.length === 0 && <p>No closings recorded yet.</p>}
+      {/* =====================================================
+          CLOSING HISTORY
+          ===================================================== */}
+
+      <div className="closing-history">
+
+        <div className="closing-history-header">
+
+          <div>
+
+            <div className="closing-breadcrumb">
+              HISTORY
+            </div>
+
+            <h2>Closing History</h2>
+
+            <p>
+              Previous day-end reconciliations
+            </p>
+
+          </div>
+
+          <div className="closing-history-count">
+            {history.length}{' '}
+            {history.length === 1
+              ? 'closing'
+              : 'closings'}
+          </div>
+
+        </div>
+
+        {history.length > 0 ? (
+
+          <div className="closing-history-table-wrap">
+
+            <table className="closing-history-table">
+
+              <thead>
+
+                <tr>
+                  <th>Date</th>
+                  <th>Sales</th>
+                  <th>Expenses</th>
+                  <th>Net Profit</th>
+                  <th>Expected Cash</th>
+                  <th>Actual Cash</th>
+                  <th>Difference</th>
+                </tr>
+
+              </thead>
+
+              <tbody>
+
+                {history.map((h) => {
+
+                  const diff =
+                    Number(
+                      h.cash_difference || 0
+                    );
+
+                  return (
+                    <tr
+                      key={h.closing_date}
+                    >
+
+                      <td>
+                        <strong>
+                          {h.closing_date}
+                        </strong>
+                      </td>
+
+                      <td>
+                        {money(
+                          h.total_sales
+                        )}
+                      </td>
+
+                      <td>
+                        {money(
+                          h.total_expenses
+                        )}
+                      </td>
+
+                      <td>
+                        <strong className="history-profit">
+                          {money(
+                            h.net_profit
+                          )}
+                        </strong>
+                      </td>
+
+                      <td>
+                        {money(
+                          h.expected_cash
+                        )}
+                      </td>
+
+                      <td>
+                        {money(
+                          h.actual_cash
+                        )}
+                      </td>
+
+                      <td>
+
+                        <span
+                          className={
+                            diff === 0
+                              ? 'history-diff match'
+                              : diff < 0
+                              ? 'history-diff shortage'
+                              : 'history-diff excess'
+                          }
+                        >
+                          {diff > 0
+                            ? '+'
+                            : ''}
+                          {money(diff)}
+                        </span>
+
+                      </td>
+
+                    </tr>
+                  );
+                })}
+
+              </tbody>
+
+            </table>
+
+          </div>
+
+        ) : (
+
+          <div className="closing-empty">
+
+            <div className="closing-empty-icon">
+              ✓
+            </div>
+
+            <strong>
+              No closings recorded yet
+            </strong>
+
+            <span>
+              Your completed day closings will
+              appear here.
+            </span>
+
+          </div>
+
+        )}
+
       </div>
+
     </div>
   );
 }

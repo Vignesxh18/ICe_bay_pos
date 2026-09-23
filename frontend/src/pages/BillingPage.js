@@ -1,68 +1,244 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 
 const BACKEND = 'http://localhost:6001';
 
+const PAYMENT_OPTIONS = [
+  { id: 'cash', label: 'Cash', icon: '₹' },
+  { id: 'upi', label: 'UPI', icon: '⌁' },
+  { id: 'card', label: 'Card', icon: '▣' },
+];
+
 export default function BillingPage() {
   const [products, setProducts] = useState([]);
   const [combos, setCombos] = useState([]);
-  const [cart, setCart] = useState([]); // [{ product_id, name, price, quantity, discount }] or [{ combo_id, name, price, quantity }]
+  const [cart, setCart] = useState([]);
+
   const [paymentMode, setPaymentMode] = useState('cash');
   const [isSplitPayment, setIsSplitPayment] = useState(false);
-  const [splitAmounts, setSplitAmounts] = useState({ cash: '', upi: '', card: '' });
+  const [splitAmounts, setSplitAmounts] = useState({
+    cash: '',
+    upi: '',
+    card: '',
+  });
+
   const [billDiscount, setBillDiscount] = useState('');
   const [lastBill, setLastBill] = useState(null);
   const [todaySales, setTodaySales] = useState(null);
-  const [heldBills, setHeldBills] = useState([]); // client-side held carts
+  const [heldBills, setHeldBills] = useState([]);
 
-  const loadProducts = () => api.get('/products').then(setProducts).catch(() => setProducts([]));
-  const loadCombos = () => api.get('/combos').then(data => setCombos(data.filter(c => c.is_currently_active))).catch(() => setCombos([]));
-  const loadToday = () => api.get('/bills').then(setTodaySales).catch(() => setTodaySales(null));
+  const [search, setSearch] = useState('');
+  const [activeTab, setActiveTab] = useState('all');
+  const [saving, setSaving] = useState(false);
 
-  useEffect(() => { loadProducts(); loadCombos(); loadToday(); }, []);
+  const loadProducts = () =>
+    api
+      .get('/products')
+      .then(setProducts)
+      .catch(() => setProducts([]));
+
+  const loadCombos = () =>
+    api
+      .get('/combos')
+      .then((data) =>
+        setCombos(data.filter((c) => c.is_currently_active))
+      )
+      .catch(() => setCombos([]));
+
+  const loadToday = () =>
+    api
+      .get('/bills')
+      .then(setTodaySales)
+      .catch(() => setTodaySales(null));
+
+  useEffect(() => {
+    loadProducts();
+    loadCombos();
+    loadToday();
+  }, []);
+
+  /* =====================================================
+     PRODUCT SEARCH
+     ===================================================== */
+
+  const filteredProducts = useMemo(() => {
+    const term = search.trim().toLowerCase();
+
+    if (!term) return products;
+
+    return products.filter((p) =>
+      String(p.name || '').toLowerCase().includes(term)
+    );
+  }, [products, search]);
+
+  /* =====================================================
+     CART
+     ===================================================== */
 
   const addToCart = (product) => {
-    setCart(c => {
-      const existing = c.find(i => i.product_id === product.id);
-      if (existing) return c.map(i => i.product_id === product.id ? { ...i, quantity: i.quantity + 1 } : i);
-      return [...c, { product_id: product.id, name: product.name, price: product.selling_price, quantity: 1, discount: 0 }];
+    setCart((current) => {
+      const existing = current.find(
+        (item) => item.product_id === product.id
+      );
+
+      if (existing) {
+        return current.map((item) =>
+          item.product_id === product.id
+            ? {
+                ...item,
+                quantity: item.quantity + 1,
+              }
+            : item
+        );
+      }
+
+      return [
+        ...current,
+        {
+          product_id: product.id,
+          name: product.name,
+          price: product.selling_price,
+          quantity: 1,
+          discount: 0,
+        },
+      ];
     });
   };
 
   const addComboToCart = (combo) => {
-    setCart(c => {
-      const existing = c.find(i => i.combo_id === combo.id);
-      if (existing) return c.map(i => i.combo_id === combo.id ? { ...i, quantity: i.quantity + 1 } : i);
-      const freeItem = combo.items.find(it => it.is_free);
-      const label = freeItem ? `${combo.name} (+ free ${freeItem.product_name})` : combo.name;
-      return [...c, { combo_id: combo.id, name: label, price: combo.price, quantity: 1, discount: 0, isCombo: true }];
+    setCart((current) => {
+      const existing = current.find(
+        (item) => item.combo_id === combo.id
+      );
+
+      if (existing) {
+        return current.map((item) =>
+          item.combo_id === combo.id
+            ? {
+                ...item,
+                quantity: item.quantity + 1,
+              }
+            : item
+        );
+      }
+
+      const freeItem = combo.items.find((item) => item.is_free);
+
+      const label = freeItem
+        ? `${combo.name} (+ free ${freeItem.product_name})`
+        : combo.name;
+
+      return [
+        ...current,
+        {
+          combo_id: combo.id,
+          name: label,
+          price: combo.price,
+          quantity: 1,
+          discount: 0,
+          isCombo: true,
+        },
+      ];
     });
   };
 
+  const getItemKey = (item) =>
+    item.combo_id
+      ? `combo-${item.combo_id}`
+      : `product-${item.product_id}`;
+
   const changeQty = (key, delta) => {
-    setCart(c => c.map(i => {
-      const itemKey = i.combo_id ? `combo-${i.combo_id}` : `product-${i.product_id}`;
-      return itemKey === key ? { ...i, quantity: i.quantity + delta } : i;
-    }).filter(i => i.quantity > 0));
+    setCart((current) =>
+      current
+        .map((item) =>
+          getItemKey(item) === key
+            ? {
+                ...item,
+                quantity: item.quantity + delta,
+              }
+            : item
+        )
+        .filter((item) => item.quantity > 0)
+    );
+  };
+
+  const removeItem = (key) => {
+    setCart((current) =>
+      current.filter((item) => getItemKey(item) !== key)
+    );
   };
 
   const setLineDiscount = (key, value) => {
-    setCart(c => c.map(i => {
-      const itemKey = i.combo_id ? `combo-${i.combo_id}` : `product-${i.product_id}`;
-      return itemKey === key ? { ...i, discount: Number(value) || 0 } : i;
-    }));
+    setCart((current) =>
+      current.map((item) =>
+        getItemKey(item) === key
+          ? {
+              ...item,
+              discount: Number(value) || 0,
+            }
+          : item
+      )
+    );
   };
 
-  const lineTotal = (item) => Math.max(0, item.price * item.quantity - (item.discount || 0));
-  const subtotal = cart.reduce((sum, i) => sum + lineTotal(i), 0);
-  const billDiscountAmount = Number(billDiscount) || 0;
-  const total = subtotal - billDiscountAmount;
+  /* =====================================================
+     TOTALS
+     ===================================================== */
 
-  const clearCart = () => { setCart([]); setBillDiscount(''); };
+  const lineTotal = (item) =>
+    Math.max(
+      0,
+      item.price * item.quantity - (item.discount || 0)
+    );
+
+  const subtotal = cart.reduce(
+    (sum, item) => sum + lineTotal(item),
+    0
+  );
+
+  const billDiscountAmount = Number(billDiscount) || 0;
+
+  const total = Math.max(
+    0,
+    subtotal - billDiscountAmount
+  );
+
+  const totalItems = cart.reduce(
+    (sum, item) => sum + item.quantity,
+    0
+  );
+
+  /* =====================================================
+     BILL ACTIONS
+     ===================================================== */
+
+  const clearCart = () => {
+    setCart([]);
+    setBillDiscount('');
+    setSplitAmounts({
+      cash: '',
+      upi: '',
+      card: '',
+    });
+  };
 
   const holdBill = () => {
-    if (cart.length === 0) return alert('Cart is empty');
-    setHeldBills(h => [...h, { id: Date.now(), cart, billDiscount, paymentMode, heldAt: new Date().toLocaleTimeString() }]);
+    if (cart.length === 0) {
+      alert('Cart is empty');
+      return;
+    }
+
+    setHeldBills((current) => [
+      ...current,
+      {
+        id: Date.now(),
+        cart,
+        billDiscount,
+        paymentMode,
+        heldAt: new Date().toLocaleTimeString(),
+      },
+    ]);
+
     clearCart();
   };
 
@@ -70,51 +246,111 @@ export default function BillingPage() {
     setCart(held.cart);
     setBillDiscount(held.billDiscount);
     setPaymentMode(held.paymentMode);
-    setHeldBills(h => h.filter(b => b.id !== held.id));
+
+    setHeldBills((current) =>
+      current.filter((bill) => bill.id !== held.id)
+    );
   };
 
-  const discardHeld = (id) => setHeldBills(h => h.filter(b => b.id !== id));
+  const discardHeld = (id) => {
+    setHeldBills((current) =>
+      current.filter((bill) => bill.id !== id)
+    );
+  };
 
   const completeBill = async () => {
-    if (cart.length === 0) return alert('Cart is empty');
+    if (cart.length === 0) {
+      alert('Cart is empty');
+      return;
+    }
 
     let body = {
       discount: billDiscountAmount,
-      lines: cart.map(i => i.combo_id
-        ? { combo_id: i.combo_id, quantity: i.quantity }
-        : { product_id: i.product_id, quantity: i.quantity, discount: i.discount }
-      )
+      lines: cart.map((item) =>
+        item.combo_id
+          ? {
+              combo_id: item.combo_id,
+              quantity: item.quantity,
+            }
+          : {
+              product_id: item.product_id,
+              quantity: item.quantity,
+              discount: item.discount,
+            }
+      ),
     };
 
     if (isSplitPayment) {
       const payments = Object.entries(splitAmounts)
-        .filter(([, v]) => v && Number(v) > 0)
-        .map(([mode, v]) => ({ mode, amount: Number(v) }));
-      const splitTotal = payments.reduce((s, p) => s + p.amount, 0);
-      if (payments.length < 2) return alert('Enter amounts for at least two payment modes to split');
-      if (Math.abs(splitTotal - total) > 0.01) return alert(`Split amounts (₹${splitTotal.toFixed(2)}) must add up to the total (₹${total.toFixed(2)})`);
+        .filter(([, value]) => value && Number(value) > 0)
+        .map(([mode, value]) => ({
+          mode,
+          amount: Number(value),
+        }));
+
+      const splitTotal = payments.reduce(
+        (sum, payment) => sum + payment.amount,
+        0
+      );
+
+      if (payments.length < 2) {
+        alert(
+          'Enter amounts for at least two payment modes to split'
+        );
+        return;
+      }
+
+      if (Math.abs(splitTotal - total) > 0.01) {
+        alert(
+          `Split amounts (₹${splitTotal.toFixed(
+            2
+          )}) must add up to the total (₹${total.toFixed(2)})`
+        );
+        return;
+      }
+
       body.payments = payments;
     } else {
       body.payment_mode = paymentMode;
     }
 
     try {
+      setSaving(true);
+
       const bill = await api.post('/bills', body);
+
       setLastBill(bill);
+
       clearCart();
-      setSplitAmounts({ cash: '', upi: '', card: '' });
+
+      setIsSplitPayment(false);
+
       loadToday();
     } catch (err) {
       alert(err.message);
+    } finally {
+      setSaving(false);
     }
   };
 
   const cancelBill = async (billId) => {
-    if (!window.confirm('Cancel this bill? Stock will be restored.')) return;
+    if (
+      !window.confirm(
+        'Cancel this bill? Stock will be restored.'
+      )
+    ) {
+      return;
+    }
+
     try {
       await api.post(`/bills/${billId}/cancel`, {});
-      if (lastBill && lastBill.id === billId) setLastBill(null);
+
+      if (lastBill && lastBill.id === billId) {
+        setLastBill(null);
+      }
+
       loadToday();
+
       alert('Bill cancelled, stock restored');
     } catch (err) {
       alert(err.message);
@@ -122,154 +358,749 @@ export default function BillingPage() {
   };
 
   const reprintBill = (billId) => {
-    window.open(`${BACKEND}/api/bills/${billId}/receipt`, '_blank');
+    window.open(
+      `${BACKEND}/api/bills/${billId}/receipt`,
+      '_blank'
+    );
   };
 
+  /* =====================================================
+     RENDER
+     ===================================================== */
+
   return (
-    <div className="row" style={{ alignItems: 'flex-start', gap: 20 }}>
-      <div style={{ flex: 2, minWidth: 300 }}>
-        <div className="card">
-          <h4 style={{ marginTop: 0 }}>Tap a product to add it</h4>
-          <div className="product-grid">
-            {products.map(p => (
-              <div key={p.id} className="product-tile" onClick={() => addToCart(p)}>
-                {p.name}
-                <div style={{ fontWeight: 400, fontSize: 12, color: '#666' }}>₹{p.selling_price}</div>
-              </div>
-            ))}
+    <div className="billing-page">
+
+      {/* PAGE HEADER */}
+
+      <div className="billing-header">
+        <div>
+          <div className="billing-breadcrumb">
+            SALES / BILLING
           </div>
-          {products.length === 0 && <p>No products yet — add some in Products & Recipes.</p>}
+
+          <h1>Billing</h1>
+
+          <p>
+            Create a new bill and collect payment
+          </p>
         </div>
 
-        {combos.length > 0 && (
-          <div className="card">
-            <h4 style={{ marginTop: 0 }}>🎁 Active Offers</h4>
-            <div className="product-grid">
-              {combos.map(c => (
-                <div key={c.id} className="product-tile" style={{ borderColor: '#ff9800' }} onClick={() => addComboToCart(c)}>
-                  {c.name}
-                  <div style={{ fontWeight: 400, fontSize: 12, color: '#666' }}>₹{c.price}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {todaySales && (
-          <div className="card">
-            <strong>Today:</strong> {todaySales.bill_count} bills, ₹{todaySales.total_sales.toFixed(2)} total sales
-          </div>
-        )}
+          <div className="billing-today-summary">
+            <div>
+              <span>Today's Sales</span>
+              <strong>
+                ₹{Number(todaySales.total_sales || 0).toFixed(0)}
+              </strong>
+            </div>
 
-        {heldBills.length > 0 && (
-          <div className="card">
-            <h4 style={{ marginTop: 0 }}>Held Bills</h4>
-            {heldBills.map(h => (
-              <div key={h.id} className="row" style={{ justifyContent: 'space-between', marginBottom: 6 }}>
-                <span>{h.cart.length} item(s) · held at {h.heldAt}</span>
-                <div className="row">
-                  <button className="btn btn-secondary" onClick={() => resumeBill(h)}>Resume</button>
-                  <button className="btn btn-secondary" onClick={() => discardHeld(h.id)}>Discard</button>
-                </div>
-              </div>
-            ))}
+            <div className="billing-today-divider" />
+
+            <div>
+              <span>Bills</span>
+              <strong>{todaySales.bill_count}</strong>
+            </div>
           </div>
         )}
       </div>
 
-      <div style={{ flex: 1, minWidth: 300 }}>
-        <div className="card">
-          <div className="row" style={{ justifyContent: 'space-between' }}>
-            <h4 style={{ margin: 0 }}>Current Bill</h4>
-            {cart.length > 0 && <button className="btn btn-secondary" onClick={holdBill}>Hold</button>}
-          </div>
+      <div className="billing-layout">
 
-          {cart.map(item => {
-            const key = item.combo_id ? `combo-${item.combo_id}` : `product-${item.product_id}`;
-            return (
-              <div key={key} className="cart-item" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
-                <div className="row" style={{ justifyContent: 'space-between' }}>
-                  <span>{item.name}</span>
-                  <div className="row">
-                    <button className="btn btn-secondary" onClick={() => changeQty(key, -1)}>-</button>
-                    <span>{item.quantity}</span>
-                    <button className="btn btn-secondary" onClick={() => changeQty(key, 1)}>+</button>
-                    <span style={{ minWidth: 60, textAlign: 'right' }}>₹{lineTotal(item).toFixed(2)}</span>
-                  </div>
-                </div>
-                {!item.isCombo && (
-                  <div className="row" style={{ marginTop: 4 }}>
-                    <label style={{ fontSize: 12, color: '#888' }}>Item discount ₹</label>
-                    <input
-                      type="number"
-                      style={{ width: 80 }}
-                      value={item.discount || ''}
-                      onChange={e => setLineDiscount(key, e.target.value)}
-                    />
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          {cart.length === 0 && <p style={{ color: '#888' }}>Cart is empty</p>}
+        {/* =================================================
+            LEFT — PRODUCTS
+            ================================================= */}
 
-          <div style={{ marginTop: 12 }}>
-            <label>Bill-level Discount ₹</label>
-            <input type="number" value={billDiscount} onChange={e => setBillDiscount(e.target.value)} style={{ width: '100%', marginTop: 4 }} />
-          </div>
+        <div className="billing-products-area">
 
-          <div style={{ marginTop: 12 }}>
-            <label>
-              <input type="checkbox" checked={isSplitPayment} onChange={e => setIsSplitPayment(e.target.checked)} /> Split Payment
-            </label>
-          </div>
+          {/* SEARCH */}
 
-          {!isSplitPayment ? (
-            <div style={{ marginTop: 8 }}>
-              <label>Payment mode</label>
-              <select value={paymentMode} onChange={e => setPaymentMode(e.target.value)} style={{ width: '100%', marginTop: 4 }}>
-                <option value="cash">Cash</option>
-                <option value="upi">UPI</option>
-                <option value="card">Card</option>
-              </select>
+          <div className="billing-search-card">
+
+            <div className="billing-search-wrapper">
+              <span className="billing-search-icon">
+                ⌕
+              </span>
+
+              <input
+                type="text"
+                placeholder="Search products..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                autoFocus
+              />
+
+              {search && (
+                <button
+                  className="billing-search-clear"
+                  onClick={() => setSearch('')}
+                >
+                  ×
+                </button>
+              )}
             </div>
-          ) : (
-            <div style={{ marginTop: 8 }}>
-              <label>Split amounts (must total ₹{total.toFixed(2)})</label>
-              <div className="row" style={{ marginTop: 4 }}>
-                <input type="number" placeholder="Cash" style={{ flex: 1 }} value={splitAmounts.cash} onChange={e => setSplitAmounts({ ...splitAmounts, cash: e.target.value })} />
-                <input type="number" placeholder="UPI" style={{ flex: 1 }} value={splitAmounts.upi} onChange={e => setSplitAmounts({ ...splitAmounts, upi: e.target.value })} />
-                <input type="number" placeholder="Card" style={{ flex: 1 }} value={splitAmounts.card} onChange={e => setSplitAmounts({ ...splitAmounts, card: e.target.value })} />
+
+            <div className="billing-tabs">
+
+              <button
+                className={
+                  activeTab === 'all'
+                    ? 'billing-tab active'
+                    : 'billing-tab'
+                }
+                onClick={() => setActiveTab('all')}
+              >
+                All
+                <span>{products.length}</span>
+              </button>
+
+              <button
+                className={
+                  activeTab === 'offers'
+                    ? 'billing-tab active offer'
+                    : 'billing-tab offer'
+                }
+                onClick={() => setActiveTab('offers')}
+              >
+                🎁 Offers
+                <span>{combos.length}</span>
+              </button>
+
+            </div>
+          </div>
+
+          {/* OFFERS */}
+
+          {activeTab === 'offers' && (
+            <div className="billing-section">
+
+              <div className="billing-section-title">
+                <div>
+                  <h3>Active Offers</h3>
+                  <span>Tap an offer to add it</span>
+                </div>
+
+                <span className="section-count">
+                  {combos.length}
+                </span>
               </div>
+
+              {combos.length === 0 ? (
+                <div className="billing-empty">
+                  <div>🎁</div>
+                  <strong>No active offers</strong>
+                  <span>
+                    Create offers from the Offers section.
+                  </span>
+                </div>
+              ) : (
+                <div className="billing-product-grid">
+                  {combos.map((combo) => (
+                    <button
+                      key={combo.id}
+                      className="billing-product-card offer-card"
+                      onClick={() => addComboToCart(combo)}
+                    >
+                      <span className="offer-ribbon">
+                        OFFER
+                      </span>
+
+                      <span className="billing-product-name">
+                        {combo.name}
+                      </span>
+
+                      <span className="billing-product-price">
+                        ₹{Number(combo.price).toFixed(0)}
+                      </span>
+
+                      <span className="billing-add">
+                        +
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
-          <div className="total-row">
-            <span>Total</span>
-            <span>₹{total.toFixed(2)}</span>
-          </div>
+          {/* PRODUCTS */}
 
-          <button className="btn" style={{ width: '100%', marginTop: 14 }} onClick={completeBill}>Complete Sale</button>
-        </div>
+          {activeTab === 'all' && (
+            <div className="billing-section">
 
-        {lastBill && (
-          <div className="card">
-            <div className="row" style={{ justifyContent: 'space-between' }}>
-              <h4 style={{ margin: 0 }}>Last Bill: {lastBill.bill_no}</h4>
-              <div className="row">
-                <button className="btn btn-secondary" onClick={() => reprintBill(lastBill.id)}>Reprint</button>
-                <button className="btn btn-secondary" onClick={() => cancelBill(lastBill.id)}>Cancel</button>
+              <div className="billing-section-title">
+                <div>
+                  <h3>Products</h3>
+
+                  <span>
+                    {search
+                      ? `${filteredProducts.length} results`
+                      : 'Tap a product to add it'}
+                  </span>
+                </div>
+
+                <span className="section-count">
+                  {filteredProducts.length}
+                </span>
+              </div>
+
+              {filteredProducts.length === 0 ? (
+                <div className="billing-empty">
+                  <div>⌕</div>
+
+                  <strong>
+                    {search
+                      ? 'No products found'
+                      : 'No products available'}
+                  </strong>
+
+                  <span>
+                    {search
+                      ? 'Try a different search.'
+                      : 'Add products from Products & Recipes.'}
+                  </span>
+                </div>
+              ) : (
+                <div className="billing-product-grid">
+                  {filteredProducts.map((product) => (
+                    <button
+                      key={product.id}
+                      className="billing-product-card"
+                      onClick={() => addToCart(product)}
+                    >
+                      <span className="billing-product-name">
+                        {product.name}
+                      </span>
+
+                      <span className="billing-product-price">
+                        ₹
+                        {Number(
+                          product.selling_price
+                        ).toFixed(0)}
+                      </span>
+
+                      <span className="billing-add">
+                        +
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* HELD BILLS */}
+
+          {heldBills.length > 0 && (
+            <div className="billing-section held-section">
+
+              <div className="billing-section-title">
+                <div>
+                  <h3>Held Bills</h3>
+                  <span>
+                    Bills waiting to be resumed
+                  </span>
+                </div>
+
+                <span className="section-count">
+                  {heldBills.length}
+                </span>
+              </div>
+
+              <div className="held-bills-list">
+                {heldBills.map((held) => (
+                  <div
+                    key={held.id}
+                    className="held-bill-row"
+                  >
+                    <div className="held-bill-info">
+                      <strong>
+                        {held.cart.reduce(
+                          (sum, item) =>
+                            sum + item.quantity,
+                          0
+                        )}{' '}
+                        items
+                      </strong>
+
+                      <span>
+                        Held at {held.heldAt}
+                      </span>
+                    </div>
+
+                    <div className="held-bill-actions">
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() =>
+                          resumeBill(held)
+                        }
+                      >
+                        Resume
+                      </button>
+
+                      <button
+                        className="held-discard"
+                        onClick={() =>
+                          discardHeld(held.id)
+                        }
+                      >
+                        Discard
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-            {lastBill.items.map(i => (
-              <div key={i.id} className="row" style={{ justifyContent: 'space-between' }}>
-                <span>{i.product_name} x{i.quantity}</span>
-                <span>₹{i.price.toFixed(2)}</span>
+          )}
+        </div>
+
+        {/* =================================================
+            RIGHT — CURRENT BILL
+            ================================================= */}
+
+        <div className="billing-cart-area">
+
+          <div className="billing-cart-card">
+
+            {/* CART HEADER */}
+
+            <div className="billing-cart-header">
+
+              <div>
+                <div className="billing-cart-title">
+                  Current Bill
+                </div>
+
+                <span>
+                  {totalItems === 0
+                    ? 'No items added'
+                    : `${totalItems} ${
+                        totalItems === 1
+                          ? 'item'
+                          : 'items'
+                      }`}
+                </span>
               </div>
-            ))}
-            <div className="total-row"><span>Total</span><span>₹{lastBill.total_amount.toFixed(2)}</span></div>
+
+              {cart.length > 0 && (
+                <button
+                  className="billing-clear-btn"
+                  onClick={clearCart}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+
+            {/* CART ITEMS */}
+
+            <div className="billing-cart-items">
+
+              {cart.length === 0 ? (
+                <div className="billing-cart-empty">
+                  <div className="cart-empty-icon">
+                    🛒
+                  </div>
+
+                  <strong>Your bill is empty</strong>
+
+                  <span>
+                    Select products from the left
+                    to start billing.
+                  </span>
+                </div>
+              ) : (
+                cart.map((item) => {
+                  const key = getItemKey(item);
+
+                  return (
+                    <div
+                      key={key}
+                      className="billing-cart-item"
+                    >
+
+                      <div className="cart-item-top">
+
+                        <div className="cart-item-info">
+                          <strong>
+                            {item.name}
+                          </strong>
+
+                          <span>
+                            ₹
+                            {Number(
+                              item.price
+                            ).toFixed(2)}{' '}
+                            each
+                          </span>
+                        </div>
+
+                        <strong className="cart-item-total">
+                          ₹
+                          {lineTotal(item).toFixed(2)}
+                        </strong>
+                      </div>
+
+                      <div className="cart-item-bottom">
+
+                        <div className="quantity-control">
+
+                          <button
+                            onClick={() =>
+                              changeQty(key, -1)
+                            }
+                          >
+                            −
+                          </button>
+
+                          <span>
+                            {item.quantity}
+                          </span>
+
+                          <button
+                            onClick={() =>
+                              changeQty(key, 1)
+                            }
+                          >
+                            +
+                          </button>
+
+                        </div>
+
+                        {!item.isCombo && (
+                          <div className="cart-discount">
+                            <span>
+                              Discount
+                            </span>
+
+                            <input
+                              type="number"
+                              min="0"
+                              value={
+                                item.discount || ''
+                              }
+                              placeholder="₹0"
+                              onChange={(e) =>
+                                setLineDiscount(
+                                  key,
+                                  e.target.value
+                                )
+                              }
+                            />
+                          </div>
+                        )}
+
+                        <button
+                          className="cart-remove"
+                          onClick={() =>
+                            removeItem(key)
+                          }
+                        >
+                          ×
+                        </button>
+
+                      </div>
+
+                    </div>
+                  );
+                })
+              )}
+
+            </div>
+
+            {/* BILL CALCULATION */}
+
+            {cart.length > 0 && (
+              <>
+
+                <div className="billing-calculation">
+
+                  <div>
+                    <span>Subtotal</span>
+                    <strong>
+                      ₹{subtotal.toFixed(2)}
+                    </strong>
+                  </div>
+
+                  <div className="bill-discount-row">
+                    <span>Bill Discount</span>
+
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="₹0"
+                      value={billDiscount}
+                      onChange={(e) =>
+                        setBillDiscount(
+                          e.target.value
+                        )
+                      }
+                    />
+                  </div>
+
+                </div>
+
+                {/* PAYMENT */}
+
+                <div className="billing-payment">
+
+                  <div className="payment-heading">
+                    <span>Payment</span>
+
+                    <label className="split-toggle">
+                      <input
+                        type="checkbox"
+                        checked={isSplitPayment}
+                        onChange={(e) => {
+                          setIsSplitPayment(
+                            e.target.checked
+                          );
+
+                          if (
+                            !e.target.checked
+                          ) {
+                            setSplitAmounts({
+                              cash: '',
+                              upi: '',
+                              card: '',
+                            });
+                          }
+                        }}
+                      />
+
+                      <span>
+                        Split Payment
+                      </span>
+                    </label>
+                  </div>
+
+                  {!isSplitPayment ? (
+                    <div className="payment-buttons">
+
+                      {PAYMENT_OPTIONS.map(
+                        (payment) => (
+                          <button
+                            key={payment.id}
+                            className={
+                              paymentMode ===
+                              payment.id
+                                ? 'payment-method active'
+                                : 'payment-method'
+                            }
+                            onClick={() =>
+                              setPaymentMode(
+                                payment.id
+                              )
+                            }
+                          >
+                            <span className="payment-method-icon">
+                              {payment.icon}
+                            </span>
+
+                            <span>
+                              {payment.label}
+                            </span>
+                          </button>
+                        )
+                      )}
+
+                    </div>
+                  ) : (
+                    <div className="split-payment-box">
+
+                      <div className="split-total">
+                        Split total:{' '}
+                        <strong>
+                          ₹{total.toFixed(2)}
+                        </strong>
+                      </div>
+
+                      <div className="split-inputs">
+
+                        <div>
+                          <label>Cash</label>
+
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="0"
+                            value={
+                              splitAmounts.cash
+                            }
+                            onChange={(e) =>
+                              setSplitAmounts({
+                                ...splitAmounts,
+                                cash: e.target
+                                  .value,
+                              })
+                            }
+                          />
+                        </div>
+
+                        <div>
+                          <label>UPI</label>
+
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="0"
+                            value={
+                              splitAmounts.upi
+                            }
+                            onChange={(e) =>
+                              setSplitAmounts({
+                                ...splitAmounts,
+                                upi: e.target
+                                  .value,
+                              })
+                            }
+                          />
+                        </div>
+
+                        <div>
+                          <label>Card</label>
+
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="0"
+                            value={
+                              splitAmounts.card
+                            }
+                            onChange={(e) =>
+                              setSplitAmounts({
+                                ...splitAmounts,
+                                card: e.target
+                                  .value,
+                              })
+                            }
+                          />
+                        </div>
+
+                      </div>
+
+                    </div>
+                  )}
+
+                </div>
+
+                {/* TOTAL */}
+
+                <div className="billing-total-box">
+
+                  <span>Total Amount</span>
+
+                  <strong>
+                    ₹{total.toFixed(2)}
+                  </strong>
+
+                </div>
+
+                {/* ACTIONS */}
+
+                <div className="billing-actions">
+
+                  <button
+                    className="billing-hold-btn"
+                    onClick={holdBill}
+                    disabled={saving}
+                  >
+                    Hold Bill
+                  </button>
+
+                  <button
+                    className="billing-complete-btn"
+                    onClick={completeBill}
+                    disabled={saving}
+                  >
+                    {saving
+                      ? 'Processing...'
+                      : 'Complete Sale'}
+                  </button>
+
+                </div>
+
+              </>
+            )}
+
           </div>
-        )}
+
+          {/* LAST BILL */}
+
+          {lastBill && (
+            <div className="last-bill-card">
+
+              <div className="last-bill-header">
+
+                <div>
+                  <span>SALE COMPLETED</span>
+
+                  <strong>
+                    {lastBill.bill_no}
+                  </strong>
+                </div>
+
+                <div className="last-bill-check">
+                  ✓
+                </div>
+
+              </div>
+
+              <div className="last-bill-items">
+                {lastBill.items.map((item) => (
+                  <div
+                    key={item.id}
+                    className="last-bill-row"
+                  >
+                    <span>
+                      {item.product_name} ×
+                      {item.quantity}
+                    </span>
+
+                    <strong>
+                      ₹{item.price.toFixed(2)}
+                    </strong>
+                  </div>
+                ))}
+              </div>
+
+              <div className="last-bill-total">
+                <span>Total</span>
+
+                <strong>
+                  ₹
+                  {lastBill.total_amount.toFixed(
+                    2
+                  )}
+                </strong>
+              </div>
+
+              <div className="last-bill-actions">
+
+                <button
+                  className="btn btn-secondary"
+                  onClick={() =>
+                    reprintBill(lastBill.id)
+                  }
+                >
+                  Reprint
+                </button>
+
+                <button
+                  className="last-bill-cancel"
+                  onClick={() =>
+                    cancelBill(lastBill.id)
+                  }
+                >
+                  Cancel Bill
+                </button>
+
+              </div>
+
+            </div>
+          )}
+
+        </div>
       </div>
     </div>
   );
