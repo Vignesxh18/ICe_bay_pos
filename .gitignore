@@ -1,0 +1,7 @@
+node_modules/
+backend/icecream.db
+backend/icecream.db-journal
+backend/icecream.db-wal
+backend/icecream.db-shm
+frontend/build/
+.DS_Store
