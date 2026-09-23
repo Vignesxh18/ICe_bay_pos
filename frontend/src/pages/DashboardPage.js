@@ -57,7 +57,7 @@ export default function DashboardPage() {
                 <div key={h.hour} title={`${h.hour}:00 — ₹${h.amount.toFixed(0)}`} style={{
                   flex: 1,
                   height: `${(h.amount / maxHourly) * 100}%`,
-                  background: h.amount > 0 ? 'var(--strawberry)' : 'var(--line)',
+                  background: h.amount > 0 ? 'var(--iris)' : 'var(--line)',
                   borderRadius: '4px 4px 0 0',
                   minHeight: 2
                 }} />

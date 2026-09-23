@@ -72,7 +72,7 @@ function ProductReport({ from, to }) {
                 <td>{p.qty_sold}</td>
                 <td>₹{p.sales.toFixed(2)}</td>
                 <td>₹{p.cost.toFixed(2)}</td>
-                <td style={{ color: p.profit >= 0 ? 'var(--pistachio-dark)' : 'var(--strawberry-dark)' }}>₹{p.profit.toFixed(2)}</td>
+                <td style={{ color: p.profit >= 0 ? 'var(--pistachio-dark)' : 'var(--danger-dark)' }}>₹{p.profit.toFixed(2)}</td>
               </tr>
             ))}
           </tbody>

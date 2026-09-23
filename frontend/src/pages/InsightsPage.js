@@ -63,7 +63,7 @@ export default function InsightsPage() {
                   <td>{s.name}</td>
                   <td>{s.current_stock.toFixed(2)} {s.unit}</td>
                   <td>{s.avg_daily_consumption} {s.unit}/day</td>
-                  <td style={{ color: s.days_of_stock_left != null && s.days_of_stock_left < 3 ? 'var(--strawberry-dark)' : 'inherit', fontWeight: 700 }}>
+                  <td style={{ color: s.days_of_stock_left != null && s.days_of_stock_left < 3 ? 'var(--danger-dark)' : 'inherit', fontWeight: 700 }}>
                     {s.days_of_stock_left != null ? `${s.days_of_stock_left} days` : '-'}
                   </td>
                   <td style={{ fontWeight: 700 }}>{s.suggested_qty} {s.unit}</td>
