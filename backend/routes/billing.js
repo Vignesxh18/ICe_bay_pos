@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
+const { permissionsFor } = require('./auth');
 
 function nextBillNo() {
   const row = db.prepare('SELECT bill_no FROM bills ORDER BY id DESC LIMIT 1').get();
@@ -77,17 +78,20 @@ router.post('/', (req, res) => {
           const product = db.prepare('SELECT selling_price FROM products WHERE id = ?').get(line.product_id);
           if (!product) throw new Error(`Product ${line.product_id} not found`);
           const lineDiscount = line.discount || 0;
+          const original = product.selling_price * line.quantity;
           expandedLines.push({
             product_id: line.product_id,
             quantity: line.quantity,
             is_free: false,
             combo_id: null,
-            price: (product.selling_price * line.quantity) - lineDiscount
+            price: original - lineDiscount,
+            original_price: original
           });
         }
       }
 
       let subtotal = 0;
+      let undiscountedSubtotal = 0;
       const billItemsToInsert = [];
 
       for (const line of expandedLines) {
@@ -96,6 +100,7 @@ router.post('/', (req, res) => {
         const lineCost = costPerUnit * line.quantity;
         const linePrice = line.is_free ? 0 : (line.price != null ? line.price : line.combo_price_share);
         subtotal += linePrice;
+        undiscountedSubtotal += line.original_price != null ? line.original_price : linePrice;
 
         billItemsToInsert.push({
           product_id: line.product_id,
@@ -109,6 +114,15 @@ router.post('/', (req, res) => {
 
       const discountAmount = discount || 0;
       const totalAmount = subtotal - discountAmount;
+
+      // Enforce the logged-in user's discount limit (percent of the undiscounted total)
+      const totalDiscountGiven = (undiscountedSubtotal - subtotal) + discountAmount;
+      const perms = permissionsFor(req.user.role);
+      const maxAllowedDiscount = undiscountedSubtotal * (perms.maxDiscountPercent / 100);
+      if (totalDiscountGiven > maxAllowedDiscount + 0.01) {
+        throw new Error(`Discount exceeds your limit (max ${perms.maxDiscountPercent}% for ${req.user.role})`);
+      }
+
       const billNo = nextBillNo();
 
       const billResult = db.prepare(
@@ -130,6 +144,11 @@ router.post('/', (req, res) => {
 
     const { billId, billNo, subtotal, discountAmount, totalAmount } = tx();
 
+    if (discountAmount > 0) {
+      db.prepare('INSERT INTO audit_log (user_id, username, action, reference, amount, reason) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(req.user.id, req.user.username, 'Discount Applied', billNo, discountAmount, req.body.discount_reason || null);
+    }
+
     const items = db.prepare(
       `SELECT bi.*, p.name AS product_name FROM bill_items bi JOIN products p ON p.id = bi.product_id WHERE bi.bill_id = ?`
     ).all(billId);
@@ -142,6 +161,9 @@ router.post('/', (req, res) => {
 });
 
 router.post('/:id/cancel', (req, res) => {
+  const perms = permissionsFor(req.user.role);
+  if (!perms.canCancelBills) return res.status(403).json({ error: 'You do not have permission to cancel bills' });
+
   try {
     const tx = db.transaction(() => {
       const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id);
@@ -153,8 +175,13 @@ router.post('/:id/cancel', (req, res) => {
         restoreStockForProduct(item.product_id, item.quantity);
       }
       db.prepare("UPDATE bills SET status = 'cancelled' WHERE id = ?").run(req.params.id);
+      return bill;
     });
-    tx();
+    const bill = tx();
+
+    db.prepare('INSERT INTO audit_log (user_id, username, action, reference, amount, reason) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(req.user.id, req.user.username, 'Bill Cancelled', bill.bill_no, bill.total_amount, req.body.reason || null);
+
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Failed to cancel bill' });

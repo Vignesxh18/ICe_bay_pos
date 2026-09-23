@@ -28,6 +28,15 @@ const migrations = [
   "ALTER TABLE raw_materials ADD COLUMN allow_decimal_quantity TEXT DEFAULT 'Yes'",
   "ALTER TABLE raw_materials ADD COLUMN description TEXT",
   "ALTER TABLE raw_materials ADD COLUMN normal_loss_percent REAL DEFAULT 0",
+  "ALTER TABLE daily_closing ADD COLUMN opening_cash REAL DEFAULT 0",
+  "ALTER TABLE daily_closing ADD COLUMN cash_sales REAL DEFAULT 0",
+  "ALTER TABLE daily_closing ADD COLUMN upi_sales REAL DEFAULT 0",
+  "ALTER TABLE daily_closing ADD COLUMN card_sales REAL DEFAULT 0",
+  "ALTER TABLE daily_closing ADD COLUMN cash_expenses REAL DEFAULT 0",
+  "ALTER TABLE daily_closing ADD COLUMN expected_cash REAL DEFAULT 0",
+  "ALTER TABLE daily_closing ADD COLUMN actual_cash REAL DEFAULT 0",
+  "ALTER TABLE daily_closing ADD COLUMN cash_difference REAL DEFAULT 0",
+  "ALTER TABLE daily_closing ADD COLUMN total_bills INTEGER DEFAULT 0",
   "ALTER TABLE combos ADD COLUMN start_date TEXT",
   "ALTER TABLE combos ADD COLUMN end_date TEXT",
   "ALTER TABLE suppliers ADD COLUMN company TEXT",
@@ -46,6 +55,38 @@ const migrations = [
 ];
 for (const m of migrations) {
   try { db.exec(m); } catch (e) { /* column already exists, ignore */ }
+}
+
+// New tables: users (login + roles) and audit_log (discount/cancel tracking)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'cashier',
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    username TEXT,
+    action TEXT NOT NULL,
+    reference TEXT,
+    amount REAL,
+    reason TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+`);
+
+// Seed a default owner account if no users exist yet
+const bcrypt = require('bcryptjs');
+const userCount = db.prepare('SELECT COUNT(*) AS c FROM users').get().c;
+if (userCount === 0) {
+  const hash = bcrypt.hashSync('owner123', 10);
+  db.prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)').run('owner', hash, 'owner');
+  console.log('Created default owner account — username: owner, password: owner123 (change this!)');
 }
 
 module.exports = db;
