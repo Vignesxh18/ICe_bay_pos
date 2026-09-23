@@ -59,3 +59,19 @@ export function getCurrentUser() {
   const raw = localStorage.getItem('icecream_user');
   return raw ? JSON.parse(raw) : null;
 }
+
+export async function uploadFile(path, file) {
+  const token = getToken();
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Upload failed' }));
+    throw new Error(err.error || 'Upload failed');
+  }
+  return res.json();
+}

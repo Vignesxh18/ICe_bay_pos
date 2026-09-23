@@ -47,10 +47,20 @@ function restoreStockForProduct(productId, quantitySold) {
 }
 
 // ---------- CREATE BILL ----------
+// payment_mode: single mode string (e.g. "cash"), OR
+// payments: [{ mode, amount }] for a split payment - if provided, payment_mode is derived as the largest share
 router.post('/', (req, res) => {
-  const { payment_mode, discount, lines } = req.body;
+  const { discount, lines } = req.body;
+  let { payment_mode, payments } = req.body;
+
+  if (Array.isArray(payments) && payments.length > 0) {
+    // Derive a primary mode (largest amount) for legacy single-mode reporting fields
+    const sorted = [...payments].sort((a, b) => b.amount - a.amount);
+    payment_mode = sorted[0].mode;
+  }
+
   if (!payment_mode || !Array.isArray(lines) || lines.length === 0) {
-    return res.status(400).json({ error: 'payment_mode and at least one line item are required' });
+    return res.status(400).json({ error: 'payment_mode (or payments) and at least one line item are required' });
   }
 
   try {
@@ -144,6 +154,11 @@ router.post('/', (req, res) => {
 
     const { billId, billNo, subtotal, discountAmount, totalAmount } = tx();
 
+    if (Array.isArray(payments) && payments.length > 0) {
+      const insertPayment = db.prepare('INSERT INTO bill_payments (bill_id, mode, amount) VALUES (?, ?, ?)');
+      for (const p of payments) insertPayment.run(billId, p.mode, p.amount);
+    }
+
     if (discountAmount > 0) {
       db.prepare('INSERT INTO audit_log (user_id, username, action, reference, amount, reason) VALUES (?, ?, ?, ?, ?, ?)')
         .run(req.user.id, req.user.username, 'Discount Applied', billNo, discountAmount, req.body.discount_reason || null);
@@ -152,8 +167,9 @@ router.post('/', (req, res) => {
     const items = db.prepare(
       `SELECT bi.*, p.name AS product_name FROM bill_items bi JOIN products p ON p.id = bi.product_id WHERE bi.bill_id = ?`
     ).all(billId);
+    const billPayments = db.prepare('SELECT mode, amount FROM bill_payments WHERE bill_id = ?').all(billId);
 
-    res.json({ id: billId, bill_no: billNo, subtotal, discount: discountAmount, total_amount: totalAmount, payment_mode, items });
+    res.json({ id: billId, bill_no: billNo, subtotal, discount: discountAmount, total_amount: totalAmount, payment_mode, payments: billPayments, items });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message || 'Failed to create bill' });
@@ -206,6 +222,12 @@ router.get('/:id/receipt', (req, res) => {
     `SELECT bi.*, p.name AS product_name FROM bill_items bi JOIN products p ON p.id = bi.product_id WHERE bi.bill_id = ?`
   ).all(req.params.id);
 
+  const billPayments = db.prepare('SELECT mode, amount FROM bill_payments WHERE bill_id = ?').all(req.params.id);
+
+  const settingsRows = db.prepare('SELECT * FROM settings').all();
+  const settings = {};
+  for (const r of settingsRows) settings[r.key] = r.value;
+
   const rows = items.map(i => `
     <tr>
       <td>${i.product_name}${i.is_free ? ' (FREE)' : ''}</td>
@@ -213,6 +235,10 @@ router.get('/:id/receipt', (req, res) => {
       <td style="text-align:right">₹${i.price.toFixed(2)}</td>
     </tr>
   `).join('');
+
+  const paymentRows = billPayments.length > 0
+    ? billPayments.map(p => `<tr><td>${p.mode.toUpperCase()}</td><td style="text-align:right">₹${p.amount.toFixed(2)}</td></tr>`).join('')
+    : `<tr><td>Payment</td><td style="text-align:right">${bill.payment_mode.toUpperCase()}</td></tr>`;
 
   res.send(`
     <html>
@@ -230,7 +256,10 @@ router.get('/:id/receipt', (req, res) => {
       </style>
     </head>
     <body>
-      <h2>🍦 Ice Cream Shop</h2>
+      <h2>🍦 ${settings.shop_name || 'Ice Cream Shop'}</h2>
+      ${settings.shop_address ? `<div class="center">${settings.shop_address}</div>` : ''}
+      ${settings.shop_phone ? `<div class="center">Ph: ${settings.shop_phone}</div>` : ''}
+      ${settings.shop_gst ? `<div class="center">GSTIN: ${settings.shop_gst}</div>` : ''}
       <div class="center">${bill.bill_no}</div>
       <div class="center">${bill.bill_date}</div>
       <hr/>
@@ -242,10 +271,10 @@ router.get('/:id/receipt', (req, res) => {
         <tr><td>Subtotal</td><td style="text-align:right">₹${bill.subtotal.toFixed(2)}</td></tr>
         ${bill.discount > 0 ? `<tr><td>Discount</td><td style="text-align:right">-₹${bill.discount.toFixed(2)}</td></tr>` : ''}
         <tr class="total"><td>Total</td><td style="text-align:right">₹${bill.total_amount.toFixed(2)}</td></tr>
-        <tr><td>Payment</td><td style="text-align:right">${bill.payment_mode.toUpperCase()}</td></tr>
+        ${paymentRows}
       </table>
       <hr/>
-      <div class="center">Thank you, visit again!</div>
+      <div class="center">${settings.receipt_footer || 'Thank you, visit again!'}</div>
       <button onclick="window.print()" style="width:100%;margin-top:16px;padding:10px;">Print</button>
     </body>
     </html>

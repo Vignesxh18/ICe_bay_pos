@@ -185,12 +185,17 @@ router.post('/', (req, res) => {
      VALUES (?, ?, ?, ?, ?, ?)`
   );
   const insertItem = db.prepare(
-    'INSERT INTO purchase_items (purchase_id, raw_material_id, quantity, rate, amount) VALUES (?, ?, ?, ?, ?)'
+    'INSERT INTO purchase_items (purchase_id, raw_material_id, quantity, rate, amount, tax_percent) VALUES (?, ?, ?, ?, ?, ?)'
   );
   const bumpStock = db.prepare('UPDATE raw_materials SET current_stock = current_stock + ? WHERE id = ?');
 
   const tx = db.transaction(() => {
-    const totalAmount = items.reduce((sum, i) => sum + (i.quantity * i.rate), 0);
+    // total_amount is tax-inclusive: base (qty x rate) + GST on that base, summed per item
+    const totalAmount = items.reduce((sum, i) => {
+      const base = i.quantity * i.rate;
+      const tax = base * ((i.tax_percent || 0) / 100);
+      return sum + base + tax;
+    }, 0);
     const result = insertPurchase.run(
       supplier_id, invoice_no || null, purchase_date || new Date().toISOString().slice(0, 10),
       totalAmount, paid_amount || 0, payment_mode || null
@@ -198,8 +203,10 @@ router.post('/', (req, res) => {
     const purchaseId = result.lastInsertRowid;
 
     for (const item of items) {
-      const amount = item.quantity * item.rate;
-      insertItem.run(purchaseId, item.raw_material_id, item.quantity, item.rate, amount);
+      const base = item.quantity * item.rate;
+      const tax = base * ((item.tax_percent || 0) / 100);
+      const amount = base + tax; // amount stored is tax-inclusive line total
+      insertItem.run(purchaseId, item.raw_material_id, item.quantity, item.rate, amount, item.tax_percent || 0);
       bumpStock.run(item.quantity, item.raw_material_id);
     }
     return { purchaseId, totalAmount };

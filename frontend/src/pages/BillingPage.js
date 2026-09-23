@@ -8,6 +8,8 @@ export default function BillingPage() {
   const [combos, setCombos] = useState([]);
   const [cart, setCart] = useState([]); // [{ product_id, name, price, quantity, discount }] or [{ combo_id, name, price, quantity }]
   const [paymentMode, setPaymentMode] = useState('cash');
+  const [isSplitPayment, setIsSplitPayment] = useState(false);
+  const [splitAmounts, setSplitAmounts] = useState({ cash: '', upi: '', card: '' });
   const [billDiscount, setBillDiscount] = useState('');
   const [lastBill, setLastBill] = useState(null);
   const [todaySales, setTodaySales] = useState(null);
@@ -75,17 +77,32 @@ export default function BillingPage() {
 
   const completeBill = async () => {
     if (cart.length === 0) return alert('Cart is empty');
+
+    let body = {
+      discount: billDiscountAmount,
+      lines: cart.map(i => i.combo_id
+        ? { combo_id: i.combo_id, quantity: i.quantity }
+        : { product_id: i.product_id, quantity: i.quantity, discount: i.discount }
+      )
+    };
+
+    if (isSplitPayment) {
+      const payments = Object.entries(splitAmounts)
+        .filter(([, v]) => v && Number(v) > 0)
+        .map(([mode, v]) => ({ mode, amount: Number(v) }));
+      const splitTotal = payments.reduce((s, p) => s + p.amount, 0);
+      if (payments.length < 2) return alert('Enter amounts for at least two payment modes to split');
+      if (Math.abs(splitTotal - total) > 0.01) return alert(`Split amounts (₹${splitTotal.toFixed(2)}) must add up to the total (₹${total.toFixed(2)})`);
+      body.payments = payments;
+    } else {
+      body.payment_mode = paymentMode;
+    }
+
     try {
-      const bill = await api.post('/bills', {
-        payment_mode: paymentMode,
-        discount: billDiscountAmount,
-        lines: cart.map(i => i.combo_id
-          ? { combo_id: i.combo_id, quantity: i.quantity }
-          : { product_id: i.product_id, quantity: i.quantity, discount: i.discount }
-        )
-      });
+      const bill = await api.post('/bills', body);
       setLastBill(bill);
       clearCart();
+      setSplitAmounts({ cash: '', upi: '', card: '' });
       loadToday();
     } catch (err) {
       alert(err.message);
@@ -202,13 +219,30 @@ export default function BillingPage() {
           </div>
 
           <div style={{ marginTop: 12 }}>
-            <label>Payment mode</label>
-            <select value={paymentMode} onChange={e => setPaymentMode(e.target.value)} style={{ width: '100%', marginTop: 4 }}>
-              <option value="cash">Cash</option>
-              <option value="upi">UPI</option>
-              <option value="card">Card</option>
-            </select>
+            <label>
+              <input type="checkbox" checked={isSplitPayment} onChange={e => setIsSplitPayment(e.target.checked)} /> Split Payment
+            </label>
           </div>
+
+          {!isSplitPayment ? (
+            <div style={{ marginTop: 8 }}>
+              <label>Payment mode</label>
+              <select value={paymentMode} onChange={e => setPaymentMode(e.target.value)} style={{ width: '100%', marginTop: 4 }}>
+                <option value="cash">Cash</option>
+                <option value="upi">UPI</option>
+                <option value="card">Card</option>
+              </select>
+            </div>
+          ) : (
+            <div style={{ marginTop: 8 }}>
+              <label>Split amounts (must total ₹{total.toFixed(2)})</label>
+              <div className="row" style={{ marginTop: 4 }}>
+                <input type="number" placeholder="Cash" style={{ flex: 1 }} value={splitAmounts.cash} onChange={e => setSplitAmounts({ ...splitAmounts, cash: e.target.value })} />
+                <input type="number" placeholder="UPI" style={{ flex: 1 }} value={splitAmounts.upi} onChange={e => setSplitAmounts({ ...splitAmounts, upi: e.target.value })} />
+                <input type="number" placeholder="Card" style={{ flex: 1 }} value={splitAmounts.card} onChange={e => setSplitAmounts({ ...splitAmounts, card: e.target.value })} />
+              </div>
+            </div>
+          )}
 
           <div className="total-row">
             <span>Total</span>

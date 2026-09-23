@@ -11,6 +11,7 @@ import ClosingPage from './pages/ClosingPage';
 import ReportsPage from './pages/ReportsPage';
 import UsersPage from './pages/UsersPage';
 import InsightsPage from './pages/InsightsPage';
+import SettingsPage from './pages/SettingsPage';
 import LoginPage from './pages/LoginPage';
 import { getCurrentUser, logout } from './api';
 import './App.css';
@@ -45,6 +46,7 @@ function App() {
           {perms.canViewReports && <button className={tab === 'reports' ? 'active' : ''} onClick={() => setTab('reports')}>Reports</button>}
           {perms.canViewReports && <button className={tab === 'insights' ? 'active' : ''} onClick={() => setTab('insights')}>Insights</button>}
           {perms.canManageUsers && <button className={tab === 'users' ? 'active' : ''} onClick={() => setTab('users')}>Staff</button>}
+          {perms.canManageUsers && <button className={tab === 'settings' ? 'active' : ''} onClick={() => setTab('settings')}>Settings</button>}
         </nav>
         <div className="row" style={{ color: 'white' }}>
           <span style={{ fontSize: 13 }}>{user.username} ({user.role})</span>
@@ -65,6 +67,7 @@ function App() {
         {tab === 'reports' && perms.canViewReports && <ReportsPage />}
         {tab === 'insights' && perms.canViewReports && <InsightsPage />}
         {tab === 'users' && perms.canManageUsers && <UsersPage />}
+        {tab === 'settings' && perms.canManageUsers && <SettingsPage />}
       </main>
     </div>
   );

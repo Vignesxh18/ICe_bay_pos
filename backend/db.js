@@ -37,6 +37,7 @@ const migrations = [
   "ALTER TABLE daily_closing ADD COLUMN actual_cash REAL DEFAULT 0",
   "ALTER TABLE daily_closing ADD COLUMN cash_difference REAL DEFAULT 0",
   "ALTER TABLE daily_closing ADD COLUMN total_bills INTEGER DEFAULT 0",
+  "ALTER TABLE purchase_items ADD COLUMN tax_percent REAL DEFAULT 0",
   "ALTER TABLE combos ADD COLUMN start_date TEXT",
   "ALTER TABLE combos ADD COLUMN end_date TEXT",
   "ALTER TABLE suppliers ADD COLUMN company TEXT",
@@ -78,7 +79,33 @@ db.exec(`
     reason TEXT,
     created_at TEXT DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS bill_payments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bill_id INTEGER NOT NULL,
+    mode TEXT NOT NULL,
+    amount REAL NOT NULL,
+    FOREIGN KEY (bill_id) REFERENCES bills(id) ON DELETE CASCADE
+  );
 `);
+
+// Seed default shop settings if not present
+const defaultSettings = {
+  shop_name: 'Ice Cream Shop',
+  shop_address: '',
+  shop_phone: '',
+  shop_gst: '',
+  receipt_footer: 'Thank you, visit again!'
+};
+const insertSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
+for (const [key, value] of Object.entries(defaultSettings)) {
+  insertSetting.run(key, value);
+}
 
 // Seed a default owner account if no users exist yet
 const bcrypt = require('bcryptjs');

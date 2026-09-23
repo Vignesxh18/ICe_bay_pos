@@ -211,3 +211,68 @@ router.get('/stock/:materialId/ledger', (req, res) => {
 });
 
 module.exports = router;
+
+// ---------- CSV EXPORT ----------
+function toCsv(rows, columns) {
+  const header = columns.map(c => c.label).join(',');
+  const lines = rows.map(row =>
+    columns.map(c => {
+      const val = typeof c.value === 'function' ? c.value(row) : row[c.value];
+      const str = val == null ? '' : String(val).replace(/"/g, '""');
+      return `"${str}"`;
+    }).join(',')
+  );
+  return [header, ...lines].join('\n');
+}
+
+router.get('/export/:type', (req, res) => {
+  const { from, to } = dateRange(req);
+  const type = req.params.type;
+  let csv, filename;
+
+  if (type === 'sales') {
+    const bills = db.prepare(`SELECT * FROM bills WHERE date(bill_date) BETWEEN ? AND ? AND status = 'active' ORDER BY bill_date`).all(from, to);
+    csv = toCsv(bills, [
+      { label: 'Bill No', value: 'bill_no' }, { label: 'Date', value: 'bill_date' },
+      { label: 'Subtotal', value: 'subtotal' }, { label: 'Discount', value: 'discount' },
+      { label: 'Total', value: 'total_amount' }, { label: 'Payment Mode', value: 'payment_mode' }
+    ]);
+    filename = `sales-${from}-to-${to}.csv`;
+  } else if (type === 'products') {
+    const rows = db.prepare(
+      `SELECT p.name AS product, SUM(bi.quantity) AS qty_sold, SUM(bi.price) AS sales, SUM(bi.cost_price) AS cost
+       FROM bill_items bi JOIN bills b ON b.id = bi.bill_id JOIN products p ON p.id = bi.product_id
+       WHERE date(b.bill_date) BETWEEN ? AND ? AND b.status = 'active' GROUP BY p.id ORDER BY sales DESC`
+    ).all(from, to);
+    csv = toCsv(rows, [
+      { label: 'Product', value: 'product' }, { label: 'Qty Sold', value: 'qty_sold' },
+      { label: 'Sales', value: 'sales' }, { label: 'Cost', value: 'cost' },
+      { label: 'Profit', value: (r) => r.sales - r.cost }
+    ]);
+    filename = `products-${from}-to-${to}.csv`;
+  } else if (type === 'purchases') {
+    const rows = db.prepare(
+      `SELECT p.*, s.name AS supplier_name FROM purchases p JOIN suppliers s ON s.id = p.supplier_id
+       WHERE p.purchase_date BETWEEN ? AND ? ORDER BY p.purchase_date`
+    ).all(from, to);
+    csv = toCsv(rows, [
+      { label: 'Date', value: 'purchase_date' }, { label: 'Supplier', value: 'supplier_name' },
+      { label: 'Invoice', value: 'invoice_no' }, { label: 'Total', value: 'total_amount' },
+      { label: 'Paid', value: 'paid_amount' }
+    ]);
+    filename = `purchases-${from}-to-${to}.csv`;
+  } else if (type === 'stock') {
+    const rows = db.prepare('SELECT * FROM raw_materials WHERE is_active = 1 ORDER BY name').all();
+    csv = toCsv(rows, [
+      { label: 'Raw Material', value: 'name' }, { label: 'Current Stock', value: 'current_stock' },
+      { label: 'Unit', value: 'unit' }, { label: 'Reorder Level', value: 'reorder_level' }
+    ]);
+    filename = 'stock.csv';
+  } else {
+    return res.status(400).json({ error: 'Unknown export type' });
+  }
+
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(csv);
+});

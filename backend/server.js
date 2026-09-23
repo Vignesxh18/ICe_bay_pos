@@ -27,6 +27,9 @@ app.use('/api/expenses', require('./routes/expenses'));
 app.use('/api/closing', require('./routes/closing'));
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/insights', require('./routes/insights'));
+app.use('/api/settings', require('./routes/settings'));
+app.use('/api/backup', require('./routes/backup'));
+app.use('/api/invoice-parser', require('./routes/invoice-parser'));
 
 app.listen(PORT, () => {
   console.log(`Ice cream shop backend running on http://localhost:${PORT}`);

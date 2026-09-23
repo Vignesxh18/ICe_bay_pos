@@ -20,11 +20,14 @@ function permissionsFor(role) {
 // Middleware: verifies the JWT and attaches req.user
 function requireAuth(req, res, next) {
   const header = req.headers.authorization;
-  if (!header || !header.startsWith('Bearer ')) {
+  const queryToken = req.query.token;
+  const token = header && header.startsWith('Bearer ') ? header.slice(7) : queryToken;
+
+  if (!token) {
     return res.status(401).json({ error: 'Not logged in' });
   }
   try {
-    const payload = jwt.verify(header.slice(7), JWT_SECRET);
+    const payload = jwt.verify(token, JWT_SECRET);
     req.user = payload; // { id, username, role }
     next();
   } catch (e) {

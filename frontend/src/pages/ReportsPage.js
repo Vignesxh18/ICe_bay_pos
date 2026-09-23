@@ -42,12 +42,15 @@ function SalesReport({ from, to }) {
   useEffect(() => { api.get(`/reports/sales?from=${from}&to=${to}`).then(setData).catch(() => setData(null)); }, [from, to]);
   if (!data) return <div className="card">Loading...</div>;
   return (
-    <div className="row" style={{ gap: 16, flexWrap: 'wrap' }}>
-      <StatCard label="Total Sales" value={`₹${data.total_sales.toFixed(2)}`} />
-      <StatCard label="Total Bills" value={data.total_bills} />
-      <StatCard label="Avg Bill Value" value={`₹${data.avg_bill_value.toFixed(2)}`} />
-      <StatCard label="Discounts Given" value={`₹${data.total_discount.toFixed(2)}`} />
-      <StatCard label="Cancelled Bills" value={data.cancelled_bills} />
+    <div>
+      <div className="row" style={{ gap: 16, flexWrap: 'wrap', marginBottom: 10 }}>
+        <StatCard label="Total Sales" value={`₹${data.total_sales.toFixed(2)}`} />
+        <StatCard label="Total Bills" value={data.total_bills} />
+        <StatCard label="Avg Bill Value" value={`₹${data.avg_bill_value.toFixed(2)}`} />
+        <StatCard label="Discounts Given" value={`₹${data.total_discount.toFixed(2)}`} />
+        <StatCard label="Cancelled Bills" value={data.cancelled_bills} />
+      </div>
+      <ExportButton type="sales" from={from} to={to} />
     </div>
   );
 }
@@ -57,22 +60,25 @@ function ProductReport({ from, to }) {
   useEffect(() => { api.get(`/reports/products?from=${from}&to=${to}`).then(setData).catch(() => setData(null)); }, [from, to]);
   if (!data) return <div className="card">Loading...</div>;
   return (
-    <div className="card">
-      <table>
-        <thead><tr><th>Product</th><th>Qty Sold</th><th>Sales</th><th>Cost</th><th>Profit</th></tr></thead>
-        <tbody>
-          {data.products.map(p => (
-            <tr key={p.product}>
-              <td>{p.product}</td>
-              <td>{p.qty_sold}</td>
-              <td>₹{p.sales.toFixed(2)}</td>
-              <td>₹{p.cost.toFixed(2)}</td>
-              <td style={{ color: p.profit >= 0 ? '#2e7d32' : '#d32f2f' }}>₹{p.profit.toFixed(2)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {data.products.length === 0 && <p>No sales in this period.</p>}
+    <div>
+      <div style={{ marginBottom: 10 }}><ExportButton type="products" from={from} to={to} /></div>
+      <div className="card">
+        <table>
+          <thead><tr><th>Product</th><th>Qty Sold</th><th>Sales</th><th>Cost</th><th>Profit</th></tr></thead>
+          <tbody>
+            {data.products.map(p => (
+              <tr key={p.product}>
+                <td>{p.product}</td>
+                <td>{p.qty_sold}</td>
+                <td>₹{p.sales.toFixed(2)}</td>
+                <td>₹{p.cost.toFixed(2)}</td>
+                <td style={{ color: p.profit >= 0 ? 'var(--pistachio-dark)' : 'var(--strawberry-dark)' }}>₹{p.profit.toFixed(2)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {data.products.length === 0 && <p>No sales in this period.</p>}
+      </div>
     </div>
   );
 }
@@ -111,6 +117,7 @@ function PurchaseReport({ from, to }) {
         <StatCard label="Total Paid" value={`₹${data.totals.total_paid.toFixed(2)}`} />
         <StatCard label="Outstanding" value={`₹${data.totals.total_outstanding.toFixed(2)}`} />
       </div>
+      <div style={{ marginBottom: 10 }}><ExportButton type="purchases" from={from} to={to} /></div>
       <div className="card">
         <table>
           <thead><tr><th>Date</th><th>Supplier</th><th>Invoice</th><th>Total</th><th>Paid</th></tr></thead>
@@ -150,6 +157,12 @@ function StockReport() {
     <div>
       <div className="card" style={{ marginBottom: 14 }}>
         <strong>Total Stock Value: ₹{data.total_value.toFixed(2)}</strong>
+      </div>
+      <div style={{ marginBottom: 10 }}>
+        <button className="btn btn-secondary" onClick={() => {
+          const token = localStorage.getItem('icecream_token');
+          window.open(`http://localhost:6001/api/reports/export/stock?token=${token}`, '_blank');
+        }}>Export CSV</button>
       </div>
       <div className="card">
         <table>
@@ -226,6 +239,15 @@ function StockLedger({ materialId, onBack }) {
       </div>
     </div>
   );
+}
+
+function ExportButton({ type, from, to }) {
+  const download = () => {
+    const token = localStorage.getItem('icecream_token');
+    const params = new URLSearchParams({ from, to, token });
+    window.open(`http://localhost:6001/api/reports/export/${type}?${params.toString()}`, '_blank');
+  };
+  return <button className="btn btn-secondary" onClick={download}>Export CSV</button>;
 }
 
 function StatCard({ label, value }) {
