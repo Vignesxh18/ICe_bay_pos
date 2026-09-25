@@ -466,40 +466,18 @@ export default function BillingPage() {
               {categories.map((cat) => (
                 <button
                   key={cat}
-                  className={selectedCategory === cat ? 'category-chip active' : 'category-chip'}
-                  onClick={() => setSelectedCategory(cat)}
+                  className={activeTab === 'all' && selectedCategory === cat ? 'category-chip active' : 'category-chip'}
+                  onClick={() => { setSelectedCategory(cat); setActiveTab('all'); }}
                 >
                   {cat}
                 </button>
               ))}
-            </div>
-
-            <div className="billing-tabs">
-
               <button
-                className={
-                  activeTab === 'all'
-                    ? 'billing-tab active'
-                    : 'billing-tab'
-                }
-                onClick={() => setActiveTab('all')}
-              >
-                All
-                <span>{products.length}</span>
-              </button>
-
-              <button
-                className={
-                  activeTab === 'offers'
-                    ? 'billing-tab active offer'
-                    : 'billing-tab offer'
-                }
+                className={activeTab === 'offers' ? 'category-chip active offer' : 'category-chip offer'}
                 onClick={() => setActiveTab('offers')}
               >
-                🎁 Offers
-                <span>{combos.length}</span>
+                🎁 Offers ({combos.length})
               </button>
-
             </div>
           </div>
 
