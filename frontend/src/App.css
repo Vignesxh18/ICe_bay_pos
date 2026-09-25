@@ -11284,3 +11284,31 @@ tbody tr:hover { background: linear-gradient(90deg, #F3F0FC, #FAF9FD); }
 
 .billing-today-divider { border: none; border-top: 1px solid var(--line); margin: 12px 20px; }
 .billing-today-summary { padding: 10px 20px; font-size: 12.5px; color: var(--chocolate); }
+
+.billing-category-rail {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 10px 0;
+  margin-bottom: 4px;
+}
+.category-chip {
+  flex-shrink: 0;
+  padding: 7px 14px;
+  border-radius: 16px;
+  border: 1.5px solid var(--line);
+  background: var(--white);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--plum);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.18s ease;
+}
+.category-chip:hover { background: var(--vanilla); }
+.category-chip.active {
+  background: linear-gradient(135deg, var(--iris), var(--iris-dark));
+  color: var(--white);
+  border-color: transparent;
+  box-shadow: 0 3px 10px rgba(123,97,255,0.3);
+}

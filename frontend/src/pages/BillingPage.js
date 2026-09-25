@@ -31,6 +31,7 @@ export default function BillingPage() {
 
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState('all');
+  const [selectedCategory, setSelectedCategory] = useState('All');
   const [saving, setSaving] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
 
@@ -64,15 +65,20 @@ export default function BillingPage() {
      PRODUCT SEARCH
      ===================================================== */
 
+  const categories = useMemo(() => {
+    const values = products.map((p) => p.category).filter((c) => c && String(c).trim());
+    return ['All', ...new Set(values)];
+  }, [products]);
+
   const filteredProducts = useMemo(() => {
     const term = search.trim().toLowerCase();
 
-    if (!term) return products;
-
-    return products.filter((p) =>
-      String(p.name || '').toLowerCase().includes(term)
-    );
-  }, [products, search]);
+    return products.filter((p) => {
+      const matchesSearch = !term || String(p.name || '').toLowerCase().includes(term);
+      const matchesCategory = selectedCategory === 'All' || p.category === selectedCategory;
+      return matchesSearch && matchesCategory;
+    });
+  }, [products, search, selectedCategory]);
 
   /* =====================================================
      CART
@@ -454,6 +460,18 @@ export default function BillingPage() {
                   ×
                 </button>
               )}
+            </div>
+
+            <div className="billing-category-rail">
+              {categories.map((cat) => (
+                <button
+                  key={cat}
+                  className={selectedCategory === cat ? 'category-chip active' : 'category-chip'}
+                  onClick={() => setSelectedCategory(cat)}
+                >
+                  {cat}
+                </button>
+              ))}
             </div>
 
             <div className="billing-tabs">
