@@ -3,7 +3,7 @@ import {
   FaChartPie, FaCashRegister, FaIceCream, FaGift, FaTruck, FaWarehouse,
   FaMoneyBillWave, FaClipboardCheck, FaLock, FaChartLine, FaLightbulb,
   FaUsers, FaCog, FaSignOutAlt, FaChevronDown, FaChevronRight, FaLayerGroup,
-  FaTasks, FaCoins, FaUserShield, FaUndoAlt, FaHistory, FaBalanceScale, FaFileInvoiceDollar
+  FaTasks, FaCoins, FaUserShield, FaUndoAlt, FaHistory, FaBalanceScale, FaFileInvoiceDollar, FaReceipt, FaShieldAlt
 } from 'react-icons/fa';
 import DashboardPage from './pages/DashboardPage';
 import ProductsPage from './pages/ProductsPage';
@@ -22,6 +22,8 @@ import ReturnsPage from './pages/ReturnsPage';
 import PnLPage from './pages/PnLPage';
 import HistoryPage from './pages/HistoryPage';
 import SupplierLedgerPage from './pages/SupplierLedgerPage';
+import BillHistoryPage from './pages/BillHistoryPage';
+import AuditLogPage from './pages/AuditLogPage';
 import LoginPage from './pages/LoginPage';
 import { getCurrentUser, logout } from './api';
 import './App.css';
@@ -40,6 +42,7 @@ const GROUPS = [
       { key: 'offers', label: 'Offers', icon: FaGift, perm: 'canManageInventory' },
       { key: 'suppliers', label: 'Suppliers', icon: FaWarehouse, perm: 'canManagePurchases' },
       { key: 'ledger', label: 'Supplier Ledger', icon: FaFileInvoiceDollar, perm: 'canManagePurchases' },
+      { key: 'billhistory', label: 'Bill History', icon: FaReceipt, perm: null },
       { key: 'history', label: 'Price & Recipe History', icon: FaHistory, perm: 'canManageInventory' },
     ]
   },
@@ -65,6 +68,7 @@ const GROUPS = [
     key: 'admin', label: 'Admin', icon: FaUserShield,
     items: [
       { key: 'users', label: 'Staff', icon: FaUsers, perm: 'canManageUsers' },
+      { key: 'auditlog', label: 'Audit Log', icon: FaShieldAlt, perm: 'canViewReports' },
       { key: 'settings', label: 'Settings', icon: FaCog, perm: 'canManageUsers' },
     ]
   },
@@ -77,7 +81,7 @@ const PAGES = {
   purchases: PurchasesPage, suppliers: SuppliersPage, expenses: ExpensesPage,
   stockcount: AvailableStockPage, closing: ClosingPage, reports: ReportsPage,
   insights: InsightsPage, users: UsersPage, settings: SettingsPage,
-  returns: ReturnsPage, pnl: PnLPage, history: HistoryPage, ledger: SupplierLedgerPage
+  returns: ReturnsPage, pnl: PnLPage, history: HistoryPage, ledger: SupplierLedgerPage, billhistory: BillHistoryPage, auditlog: AuditLogPage
 };
 
 function App() {

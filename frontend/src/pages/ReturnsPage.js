@@ -120,8 +120,10 @@ function SalesRefund() {
 
   const cancelBill = async (bill) => {
     if (!window.confirm(`Cancel ${bill.bill_no}? Stock will be restored for the whole bill.`)) return;
+    const reason = window.prompt('Reason for cancelling this bill (required):');
+    if (!reason || !reason.trim()) return alert('A reason is required to cancel a bill');
     try {
-      await api.post(`/bills/${bill.id}/cancel`, {});
+      await api.post(`/bills/${bill.id}/cancel`, { reason: reason.trim() });
       alert('Bill cancelled, stock restored');
       loadBills();
     } catch (err) {

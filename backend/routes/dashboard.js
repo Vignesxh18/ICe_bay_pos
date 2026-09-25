@@ -12,10 +12,16 @@ router.get('/', (req, res) => {
   const totalSales = bills.reduce((s, b) => s + b.total_amount, 0);
   const totalBills = bills.length;
 
-  // Payment mode breakdown
+  // Payment mode breakdown — split-payment bills contribute to each mode they actually used
   const modeMap = {};
+  const splitStmt = db.prepare('SELECT mode, amount FROM bill_payments WHERE bill_id = ?');
   for (const b of bills) {
-    modeMap[b.payment_mode] = (modeMap[b.payment_mode] || 0) + b.total_amount;
+    const splits = splitStmt.all(b.id);
+    if (splits.length > 0) {
+      for (const s of splits) modeMap[s.mode] = (modeMap[s.mode] || 0) + s.amount;
+    } else {
+      modeMap[b.payment_mode] = (modeMap[b.payment_mode] || 0) + b.total_amount;
+    }
   }
   const paymentBreakdown = Object.entries(modeMap).map(([mode, amount]) => ({
     mode,

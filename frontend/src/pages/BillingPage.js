@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
+import BillHistoryPanel from './BillHistoryPanel';
 
 const BACKEND = 'http://localhost:6001';
 
@@ -23,6 +24,7 @@ export default function BillingPage() {
   });
 
   const [billDiscount, setBillDiscount] = useState('');
+  const [discountType, setDiscountType] = useState('fixed'); // 'fixed' or 'percent'
   const [lastBill, setLastBill] = useState(null);
   const [todaySales, setTodaySales] = useState(null);
   const [heldBills, setHeldBills] = useState([]);
@@ -30,6 +32,7 @@ export default function BillingPage() {
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState('all');
   const [saving, setSaving] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
 
   const loadProducts = () =>
     api
@@ -196,7 +199,9 @@ export default function BillingPage() {
     0
   );
 
-  const billDiscountAmount = Number(billDiscount) || 0;
+  const billDiscountAmount = discountType === 'percent'
+    ? Math.round(subtotal * ((Number(billDiscount) || 0) / 100) * 100) / 100
+    : (Number(billDiscount) || 0);
 
   const total = Math.max(
     0,
@@ -319,6 +324,10 @@ export default function BillingPage() {
 
       const bill = await api.post('/bills', body);
 
+      if (bill.stock_warnings && bill.stock_warnings.length > 0) {
+        alert('Sale completed, but stock is now short:\n\n' + bill.stock_warnings.join('\n'));
+      }
+
       setLastBill(bill);
 
       clearCart();
@@ -342,8 +351,14 @@ export default function BillingPage() {
       return;
     }
 
+    const reason = window.prompt('Reason for cancelling this bill (required):');
+    if (!reason || !reason.trim()) {
+      alert('A reason is required to cancel a bill');
+      return;
+    }
+
     try {
-      await api.post(`/bills/${billId}/cancel`, {});
+      await api.post(`/bills/${billId}/cancel`, { reason: reason.trim() });
 
       if (lastBill && lastBill.id === billId) {
         setLastBill(null);
@@ -358,8 +373,9 @@ export default function BillingPage() {
   };
 
   const reprintBill = (billId) => {
+    const token = localStorage.getItem('icecream_token');
     window.open(
-      `${BACKEND}/api/bills/${billId}/receipt`,
+      `${BACKEND}/api/bills/${billId}/receipt?token=${token}`,
       '_blank'
     );
   };
@@ -690,7 +706,11 @@ export default function BillingPage() {
                   Clear
                 </button>
               )}
+              <button className="btn btn-secondary" style={{ marginLeft: 8 }} onClick={() => setShowHistory(true)}>
+                History
+              </button>
             </div>
+            {showHistory && <BillHistoryPanel onClose={() => setShowHistory(false)} />}
 
             {/* CART ITEMS */}
 
@@ -825,18 +845,36 @@ export default function BillingPage() {
                   <div className="bill-discount-row">
                     <span>Bill Discount</span>
 
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder="₹0"
-                      value={billDiscount}
-                      onChange={(e) =>
-                        setBillDiscount(
-                          e.target.value
-                        )
-                      }
-                    />
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <select
+                        value={discountType}
+                        onChange={(e) => setDiscountType(e.target.value)}
+                        style={{ padding: '6px 8px' }}
+                      >
+                        <option value="fixed">₹ Fixed</option>
+                        <option value="percent">% Percent</option>
+                      </select>
+
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder={discountType === 'percent' ? '0%' : '₹0'}
+                        value={billDiscount}
+                        onChange={(e) =>
+                          setBillDiscount(
+                            e.target.value
+                          )
+                        }
+                        style={{ width: 90 }}
+                      />
+                    </div>
                   </div>
+
+                  {discountType === 'percent' && billDiscount && (
+                    <div className="row" style={{ justifyContent: 'flex-end', fontSize: 12, color: 'var(--chocolate)' }}>
+                      = ₹{billDiscountAmount.toFixed(2)} off
+                    </div>
+                  )}
 
                 </div>
 

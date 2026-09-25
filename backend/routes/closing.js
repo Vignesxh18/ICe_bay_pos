@@ -2,15 +2,33 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 
+// Correctly attribute sales to Cash/UPI/Card even for split-payment bills.
+// A split bill has rows in bill_payments; a non-split bill doesn't, so its
+// full total is attributed to its single payment_mode.
+function salesByMode(bills) {
+  const totals = { cash: 0, upi: 0, card: 0 };
+  const splitStmt = db.prepare('SELECT mode, amount FROM bill_payments WHERE bill_id = ?');
+
+  for (const bill of bills) {
+    const splits = splitStmt.all(bill.id);
+    if (splits.length > 0) {
+      for (const s of splits) {
+        if (totals[s.mode] !== undefined) totals[s.mode] += s.amount;
+      }
+    } else if (totals[bill.payment_mode] !== undefined) {
+      totals[bill.payment_mode] += bill.total_amount;
+    }
+  }
+  return totals;
+}
+
 // Get the closing computation for a date (before saving) - shows what "expected" would be
 router.get('/preview', (req, res) => {
   const date = req.query.date || new Date().toISOString().slice(0, 10);
 
   const bills = db.prepare(`SELECT * FROM bills WHERE date(bill_date) = ? AND status = 'active'`).all(date);
   const totalSales = bills.reduce((s, b) => s + b.total_amount, 0);
-  const cashSales = bills.filter(b => b.payment_mode === 'cash').reduce((s, b) => s + b.total_amount, 0);
-  const upiSales = bills.filter(b => b.payment_mode === 'upi').reduce((s, b) => s + b.total_amount, 0);
-  const cardSales = bills.filter(b => b.payment_mode === 'card').reduce((s, b) => s + b.total_amount, 0);
+  const { cash: cashSales, upi: upiSales, card: cardSales } = salesByMode(bills);
 
   const expenses = db.prepare(`SELECT * FROM expenses WHERE expense_date = ?`).all(date);
   const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
@@ -52,9 +70,7 @@ router.post('/', (req, res) => {
 
   const bills = db.prepare(`SELECT * FROM bills WHERE date(bill_date) = ? AND status = 'active'`).all(closingDate);
   const totalSales = bills.reduce((s, b) => s + b.total_amount, 0);
-  const cashSales = bills.filter(b => b.payment_mode === 'cash').reduce((s, b) => s + b.total_amount, 0);
-  const upiSales = bills.filter(b => b.payment_mode === 'upi').reduce((s, b) => s + b.total_amount, 0);
-  const cardSales = bills.filter(b => b.payment_mode === 'card').reduce((s, b) => s + b.total_amount, 0);
+  const { cash: cashSales, upi: upiSales, card: cardSales } = salesByMode(bills);
 
   const expenses = db.prepare(`SELECT * FROM expenses WHERE expense_date = ?`).all(closingDate);
   const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);

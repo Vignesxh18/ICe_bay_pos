@@ -51,12 +51,20 @@ router.get('/products', (req, res) => {
 router.get('/payments', (req, res) => {
   const { from, to } = dateRange(req);
   const bills = db.prepare(
-    `SELECT payment_mode, total_amount FROM bills WHERE date(bill_date) BETWEEN ? AND ? AND status = 'active'`
+    `SELECT id, payment_mode, total_amount FROM bills WHERE date(bill_date) BETWEEN ? AND ? AND status = 'active'`
   ).all(from, to);
 
   const total = bills.reduce((s, b) => s + b.total_amount, 0);
   const map = {};
-  for (const b of bills) map[b.payment_mode] = (map[b.payment_mode] || 0) + b.total_amount;
+  const splitStmt = db.prepare('SELECT mode, amount FROM bill_payments WHERE bill_id = ?');
+  for (const b of bills) {
+    const splits = splitStmt.all(b.id);
+    if (splits.length > 0) {
+      for (const s of splits) map[s.mode] = (map[s.mode] || 0) + s.amount;
+    } else {
+      map[b.payment_mode] = (map[b.payment_mode] || 0) + b.total_amount;
+    }
+  }
 
   const breakdown = Object.entries(map).map(([mode, amount]) => ({
     mode, amount, percent: total > 0 ? Math.round((amount / total) * 1000) / 10 : 0
