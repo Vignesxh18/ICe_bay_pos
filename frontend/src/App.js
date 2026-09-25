@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   FaChartPie, FaCashRegister, FaIceCream, FaGift, FaTruck, FaWarehouse,
   FaMoneyBillWave, FaClipboardCheck, FaLock, FaChartLine, FaLightbulb,
@@ -25,7 +25,7 @@ import SupplierLedgerPage from './pages/SupplierLedgerPage';
 import BillHistoryPage from './pages/BillHistoryPage';
 import AuditLogPage from './pages/AuditLogPage';
 import LoginPage from './pages/LoginPage';
-import { getCurrentUser, logout } from './api';
+import { getCurrentUser, logout, api } from './api';
 import './App.css';
 
 // Top-level items (always visible, no group) + grouped sections (collapsible)
@@ -86,6 +86,13 @@ const PAGES = {
 
 function App() {
   const [user, setUser] = useState(getCurrentUser());
+  const [shopName, setShopName] = useState('Ice Cream Shop');
+
+  useEffect(() => {
+    api.get('/settings').then(data => {
+      if (data && data.shop_name) setShopName(data.shop_name);
+    }).catch(() => {});
+  }, []);
   const [tab, setTab] = useState('dashboard');
   const [openGroups, setOpenGroups] = useState({ masters: true, operations: true, finance: false, admin: false });
 
@@ -112,7 +119,7 @@ function App() {
       <aside className="sidebar">
         <div className="sidebar-brand">
           <div className="brand-mark">🍦</div>
-          <div className="brand-text">Ice Cream Shop</div>
+          <div className="brand-text">{shopName}</div>
         </div>
 
         <nav className="sidebar-nav">
