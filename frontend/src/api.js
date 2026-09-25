@@ -1,4 +1,4 @@
-const BASE = 'http://localhost:6001/api';
+const BASE = '/api';
 
 function getToken() {
   return localStorage.getItem('icecream_token');

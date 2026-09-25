@@ -22,6 +22,7 @@ import ReturnsPage from './pages/ReturnsPage';
 import PnLPage from './pages/PnLPage';
 import HistoryPage from './pages/HistoryPage';
 import SupplierLedgerPage from './pages/SupplierLedgerPage';
+import CategoriesPage from './pages/CategoriesPage';
 import BillHistoryPage from './pages/BillHistoryPage';
 import AuditLogPage from './pages/AuditLogPage';
 import LoginPage from './pages/LoginPage';
@@ -41,6 +42,7 @@ const GROUPS = [
       { key: 'products', label: 'Products & Recipes', icon: FaIceCream, perm: 'canManageInventory' },
       { key: 'offers', label: 'Offers', icon: FaGift, perm: 'canManageInventory' },
       { key: 'suppliers', label: 'Suppliers', icon: FaWarehouse, perm: 'canManagePurchases' },
+      { key: 'categories', label: 'Categories', icon: FaLayerGroup, perm: 'canManageInventory' },
       { key: 'ledger', label: 'Supplier Ledger', icon: FaFileInvoiceDollar, perm: 'canManagePurchases' },
       { key: 'billhistory', label: 'Bill History', icon: FaReceipt, perm: null },
       { key: 'history', label: 'Price & Recipe History', icon: FaHistory, perm: 'canManageInventory' },
@@ -81,7 +83,7 @@ const PAGES = {
   purchases: PurchasesPage, suppliers: SuppliersPage, expenses: ExpensesPage,
   stockcount: AvailableStockPage, closing: ClosingPage, reports: ReportsPage,
   insights: InsightsPage, users: UsersPage, settings: SettingsPage,
-  returns: ReturnsPage, pnl: PnLPage, history: HistoryPage, ledger: SupplierLedgerPage, billhistory: BillHistoryPage, auditlog: AuditLogPage
+  returns: ReturnsPage, pnl: PnLPage, history: HistoryPage, ledger: SupplierLedgerPage, billhistory: BillHistoryPage, auditlog: AuditLogPage, categories: CategoriesPage
 };
 
 function App() {
@@ -89,10 +91,11 @@ function App() {
   const [shopName, setShopName] = useState('Ice Cream Shop');
 
   useEffect(() => {
+    if (!user) return;
     api.get('/settings').then(data => {
       if (data && data.shop_name) setShopName(data.shop_name);
     }).catch(() => {});
-  }, []);
+  }, [user]);
   const [tab, setTab] = useState('dashboard');
   const [openGroups, setOpenGroups] = useState({ masters: true, operations: true, finance: false, admin: false });
 

@@ -216,4 +216,27 @@ router.get('/products/:id/cost', (req, res) => {
   });
 });
 
+// ---------- CATEGORIES (shared master list) ----------
+router.get('/categories', (req, res) => {
+  const rows = db.prepare('SELECT * FROM categories ORDER BY name').all();
+  res.json(rows);
+});
+
+router.post('/categories', (req, res) => {
+  const { name } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: 'Category name is required' });
+  try {
+    const result = db.prepare('INSERT INTO categories (name) VALUES (?)').run(name.trim());
+    res.json({ id: result.lastInsertRowid, name: name.trim() });
+  } catch (err) {
+    if (err.message.includes('UNIQUE')) return res.status(400).json({ error: 'Category already exists' });
+    res.status(500).json({ error: 'Failed to create category' });
+  }
+});
+
+router.delete('/categories/:id', (req, res) => {
+  db.prepare('DELETE FROM categories WHERE id = ?').run(req.params.id);
+  res.json({ success: true });
+});
+
 module.exports = router;

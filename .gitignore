@@ -5,3 +5,5 @@ backend/icecream.db-wal
 backend/icecream.db-shm
 frontend/build/
 .DS_Store
+backend/.env
+backend/*.db

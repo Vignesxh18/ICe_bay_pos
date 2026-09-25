@@ -80,7 +80,7 @@ export default function SettingsPage() {
       );
 
       window.open(
-        `http://localhost:6001/api/backup/download/${filename}?token=${token}`,
+        `/api/backup/download/${filename}?token=${token}`,
         '_blank'
       );
     } finally {

@@ -62,9 +62,6 @@ export default function LoginPage({ onLoggedIn }) {
           {loading ? 'Logging in...' : 'Log In'}
         </button>
 
-        <p style={{ fontSize: 11.5, color: '#B8A99C', textAlign: 'center', marginTop: 18, marginBottom: 0 }}>
-          Default: owner / owner123
-        </p>
       </form>
     </div>
   );

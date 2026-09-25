@@ -1109,7 +1109,7 @@ function StockReport() {
       localStorage.getItem('icecream_token');
 
     window.open(
-      `http://localhost:6001/api/reports/export/stock?token=${token}`,
+      `/api/reports/export/stock?token=${token}`,
       '_blank'
     );
   };
@@ -1698,7 +1698,7 @@ function ExportButton({
 
 
     window.open(
-      `http://localhost:6001/api/reports/export/${type}?${params.toString()}`,
+      `/api/reports/export/${type}?${params.toString()}`,
       '_blank'
     );
   };

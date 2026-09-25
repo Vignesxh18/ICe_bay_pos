@@ -1383,7 +1383,7 @@ export default function PurchasesPage() {
                         <td>
                           <a
                             className="invoice-link"
-                            href={`http://localhost:6001/api/purchases/${purchase.id}/invoice`}
+                            href={`/api/purchases/${purchase.id}/invoice`}
                             target="_blank"
                             rel="noreferrer"
                           >

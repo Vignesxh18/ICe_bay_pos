@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { api } from '../api';
 
 const UNITS = ['g', 'kg', 'ml', 'l', 'pcs'];
@@ -14,6 +14,14 @@ const emptyForm = {
 };
 
 export default function RawMaterialForm({ editing, onSaved, onCancel }) {
+  const [categories, setCategories] = useState([]);
+  const [addingCategory, setAddingCategory] = useState(false);
+
+  useEffect(() => {
+    api.get('/categories').then(list => {
+      setCategories(list.map(c => c.name));
+    }).catch(() => {});
+  }, []);
   const [form, setForm] = useState(() => editing ? {
     name: editing.name, purchase_unit: editing.purchase_unit || editing.unit, consumption_unit: editing.consumption_unit || editing.unit,
     category: editing.category || '',
@@ -75,7 +83,46 @@ export default function RawMaterialForm({ editing, onSaved, onCancel }) {
         </div>
         <div style={{ flex: 1, minWidth: 160 }}>
           <label>Category</label>
-          <input style={{ width: '100%' }} placeholder="e.g. Chocolate" value={form.category} onChange={e => set('category', e.target.value)} />
+          {addingCategory ? (
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input
+                style={{ flex: 1 }}
+                placeholder="Type new category name"
+                autoFocus
+                value={form.category}
+                onChange={e => set('category', e.target.value)}
+              />
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={async () => {
+                  if (form.category.trim()) {
+                    try { await api.post('/categories', { name: form.category.trim() }); } catch (e) {}
+                  }
+                  setAddingCategory(false);
+                }}
+              >
+                Done
+              </button>
+            </div>
+          ) : (
+            <select
+              style={{ width: '100%' }}
+              value={form.category}
+              onChange={e => {
+                if (e.target.value === '__add_new__') {
+                  set('category', '');
+                  setAddingCategory(true);
+                } else {
+                  set('category', e.target.value);
+                }
+              }}
+            >
+              <option value="">-- select category --</option>
+              {categories.map(c => <option key={c} value={c}>{c}</option>)}
+              <option value="__add_new__">+ Add New Category</option>
+            </select>
+          )}
         </div>
       </div>
 

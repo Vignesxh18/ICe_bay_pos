@@ -16,6 +16,7 @@ export default function ProductsPage() {
 
   const [productSearch, setProductSearch] = useState('');
   const [materialSearch, setMaterialSearch] = useState('');
+  const [materialCategory, setMaterialCategory] = useState('All');
   const [selectedCategory, setSelectedCategory] = useState('All');
 
   const [form, setForm] = useState({
@@ -88,10 +89,17 @@ export default function ProductsPage() {
      FILTER MATERIALS
      ===================================================== */
 
+  const materialCategories = useMemo(() => {
+    const values = materials.map((m) => m.category).filter((c) => c && String(c).trim());
+    return ['All', ...new Set(values)].sort((a, b) => a === 'All' ? -1 : a.localeCompare(b));
+  }, [materials]);
+
   const filteredMaterials = useMemo(() => {
     const search = materialSearch.trim().toLowerCase();
 
     return materials.filter((material) => {
+      const matchesCategory = materialCategory === 'All' || material.category === materialCategory;
+      if (!matchesCategory) return false;
       if (!search) return true;
 
       return (
@@ -103,7 +111,7 @@ export default function ProductsPage() {
           .includes(search)
       );
     });
-  }, [materials, materialSearch]);
+  }, [materials, materialSearch, materialCategory]);
 
   /* =====================================================
      MATERIAL ACTIONS
@@ -1059,6 +1067,23 @@ export default function ProductsPage() {
               + Add Raw Material
             </button>
 
+          </div>
+
+          {/* CATEGORY FILTER */}
+
+          <div className="category-filter-row">
+            {materialCategories.map((category) => (
+              <button
+                key={category}
+                className={materialCategory === category ? 'category-chip active' : 'category-chip'}
+                onClick={() => setMaterialCategory(category)}
+              >
+                {category}
+                <span>
+                  {category === 'All' ? materials.length : materials.filter((m) => m.category === category).length}
+                </span>
+              </button>
+            ))}
           </div>
 
           {/* MATERIAL SUMMARY */}

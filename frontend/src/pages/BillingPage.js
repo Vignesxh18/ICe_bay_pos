@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import BillHistoryPanel from './BillHistoryPanel';
 
-const BACKEND = 'http://localhost:6001';
+const BACKEND = '';
 
 const PAYMENT_OPTIONS = [
   { id: 'cash', label: 'Cash', icon: '₹' },
@@ -85,6 +85,35 @@ export default function BillingPage() {
      ===================================================== */
 
   const addToCart = (product) => {
+    if (product.pricing_type === 'weighted') {
+      const gramsStr = window.prompt(`Enter weight in grams for "${product.name}" (₹${product.selling_price}/g):`);
+      if (!gramsStr) return;
+      const grams = Number(gramsStr);
+      if (!grams || grams <= 0) return alert('Enter a valid weight in grams');
+
+      setCart((current) => {
+        const existing = current.find((item) => item.product_id === product.id);
+        if (existing) {
+          return current.map((item) =>
+            item.product_id === product.id
+              ? { ...item, quantity: item.quantity + grams }
+              : item
+          );
+        }
+        return [
+          ...current,
+          {
+            product_id: product.id,
+            name: product.name,
+            price: product.selling_price,
+            quantity: grams,
+            discount: 0,
+          },
+        ];
+      });
+      return;
+    }
+
     setCart((current) => {
       const existing = current.find(
         (item) => item.product_id === product.id
