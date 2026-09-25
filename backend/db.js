@@ -92,6 +92,52 @@ db.exec(`
     amount REAL NOT NULL,
     FOREIGN KEY (bill_id) REFERENCES bills(id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS purchase_returns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    purchase_id INTEGER,
+    supplier_id INTEGER NOT NULL,
+    raw_material_id INTEGER NOT NULL,
+    quantity REAL NOT NULL,
+    rate REAL NOT NULL,
+    amount REAL NOT NULL,
+    return_date TEXT NOT NULL,
+    reason TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS sale_returns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bill_id INTEGER NOT NULL,
+    bill_item_id INTEGER NOT NULL,
+    product_id INTEGER NOT NULL,
+    quantity REAL NOT NULL,
+    refund_amount REAL NOT NULL,
+    reason TEXT,
+    return_date TEXT NOT NULL,
+    user_id INTEGER,
+    username TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS price_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id INTEGER NOT NULL,
+    old_price REAL,
+    new_price REAL NOT NULL,
+    changed_by TEXT,
+    changed_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS recipe_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id INTEGER NOT NULL,
+    raw_material_id INTEGER NOT NULL,
+    quantity_required REAL NOT NULL,
+    effective_from TEXT,
+    effective_to TEXT,
+    changed_by TEXT
+  );
 `);
 
 // Seed default shop settings if not present

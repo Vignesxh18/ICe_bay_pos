@@ -3,7 +3,7 @@ import {
   FaChartPie, FaCashRegister, FaIceCream, FaGift, FaTruck, FaWarehouse,
   FaMoneyBillWave, FaClipboardCheck, FaLock, FaChartLine, FaLightbulb,
   FaUsers, FaCog, FaSignOutAlt, FaChevronDown, FaChevronRight, FaLayerGroup,
-  FaTasks, FaCoins, FaUserShield
+  FaTasks, FaCoins, FaUserShield, FaUndoAlt, FaHistory, FaBalanceScale, FaFileInvoiceDollar
 } from 'react-icons/fa';
 import DashboardPage from './pages/DashboardPage';
 import ProductsPage from './pages/ProductsPage';
@@ -18,6 +18,10 @@ import ReportsPage from './pages/ReportsPage';
 import UsersPage from './pages/UsersPage';
 import InsightsPage from './pages/InsightsPage';
 import SettingsPage from './pages/SettingsPage';
+import ReturnsPage from './pages/ReturnsPage';
+import PnLPage from './pages/PnLPage';
+import HistoryPage from './pages/HistoryPage';
+import SupplierLedgerPage from './pages/SupplierLedgerPage';
 import LoginPage from './pages/LoginPage';
 import { getCurrentUser, logout } from './api';
 import './App.css';
@@ -35,6 +39,8 @@ const GROUPS = [
       { key: 'products', label: 'Products & Recipes', icon: FaIceCream, perm: 'canManageInventory' },
       { key: 'offers', label: 'Offers', icon: FaGift, perm: 'canManageInventory' },
       { key: 'suppliers', label: 'Suppliers', icon: FaWarehouse, perm: 'canManagePurchases' },
+      { key: 'ledger', label: 'Supplier Ledger', icon: FaFileInvoiceDollar, perm: 'canManagePurchases' },
+      { key: 'history', label: 'Price & Recipe History', icon: FaHistory, perm: 'canManageInventory' },
     ]
   },
   {
@@ -42,14 +48,16 @@ const GROUPS = [
     items: [
       { key: 'purchases', label: 'Purchases', icon: FaTruck, perm: 'canManagePurchases' },
       { key: 'stockcount', label: 'Available Stock', icon: FaClipboardCheck, perm: 'canManageInventory' },
+      { key: 'returns', label: 'Returns & Refunds', icon: FaUndoAlt, perm: 'canManagePurchases' },
     ]
   },
   {
     key: 'finance', label: 'Finance', icon: FaCoins,
     items: [
-      { key: 'expenses', label: 'Expenses', icon: FaMoneyBillWave, perm: 'canManageExpenses' },
+      { key: 'expenses', label: 'Expenses', icon: FaMoneyBillWave, perm:'canManageExpenses' },
       { key: 'closing', label: 'Day Closing', icon: FaLock, perm: null },
       { key: 'reports', label: 'Reports', icon: FaChartLine, perm: 'canViewReports' },
+      { key: 'pnl', label: 'P&L Report', icon: FaBalanceScale, perm: 'canViewReports' },
       { key: 'insights', label: 'Insights', icon: FaLightbulb, perm: 'canViewReports' },
     ]
   },
@@ -68,7 +76,8 @@ const PAGES = {
   dashboard: DashboardPage, billing: BillingPage, products: ProductsPage, offers: OffersPage,
   purchases: PurchasesPage, suppliers: SuppliersPage, expenses: ExpensesPage,
   stockcount: AvailableStockPage, closing: ClosingPage, reports: ReportsPage,
-  insights: InsightsPage, users: UsersPage, settings: SettingsPage
+  insights: InsightsPage, users: UsersPage, settings: SettingsPage,
+  returns: ReturnsPage, pnl: PnLPage, history: HistoryPage, ledger: SupplierLedgerPage
 };
 
 function App() {
@@ -125,7 +134,7 @@ function App() {
                   <span>{group.label}</span>
                   {isOpen ? <FaChevronDown className="chevron" /> : <FaChevronRight className="chevron" />}
                 </button>
-                <div className={`sidebar-group-items ${isOpen ? 'open' : ''}`}>
+                <div className={`sidebar-group-items ${isOpen ? 'open' :''}`}>
                   {visibleItems.map(item => {
                     const Icon = item.icon;
                     return (

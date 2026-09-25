@@ -67,14 +67,21 @@ router.get('/suppliers/:id/statement', (req, res) => {
      FROM supplier_payments WHERE supplier_id = ?`
   ).all(req.params.id);
 
+  const returns = db.prepare(
+    `SELECT pr.id, pr.return_date AS date, pr.amount, pr.reason, m.name AS raw_material_name, 'return' AS type
+     FROM purchase_returns pr JOIN raw_materials m ON m.id = pr.raw_material_id
+     WHERE pr.supplier_id = ?`
+  ).all(req.params.id);
+
   const totalPurchased = purchases.reduce((s, p) => s + p.total_amount, 0);
   const totalPaidAtPurchase = purchases.reduce((s, p) => s + p.paid_amount, 0);
   const totalPaidSeparately = payments.reduce((s, p) => s + p.amount, 0);
-  const outstanding = supplier.opening_balance + totalPurchased - totalPaidAtPurchase - totalPaidSeparately;
+  const totalReturned = returns.reduce((s, r) => s + r.amount, 0);
+  const outstanding = supplier.opening_balance + totalPurchased - totalPaidAtPurchase - totalPaidSeparately - totalReturned;
 
   res.json({
-    supplier, purchases, payments,
-    totals: { total_purchased: totalPurchased, total_paid: totalPaidAtPurchase + totalPaidSeparately, outstanding }
+    supplier, purchases, payments, returns,
+    totals: { total_purchased: totalPurchased, total_paid: totalPaidAtPurchase + totalPaidSeparately, total_returned: totalReturned, outstanding }
   });
 });
 
@@ -221,6 +228,45 @@ router.post('/:id/pay', (req, res) => {
   if (!amount) return res.status(400).json({ error: 'amount is required' });
   db.prepare('UPDATE purchases SET paid_amount = paid_amount + ? WHERE id = ?').run(amount, req.params.id);
   res.json({ success: true });
+});
+
+// ---------- PURCHASE RETURN ----------
+// Returns raw material back to supplier: decreases stock, records against outstanding
+router.post('/returns', (req, res) => {
+  const { purchase_id, supplier_id, raw_material_id, quantity, rate, return_date, reason } = req.body;
+  if (!supplier_id || !raw_material_id || !quantity || !rate) {
+    return res.status(400).json({ error: 'supplier_id, raw_material_id, quantity, and rate are required' });
+  }
+
+  const material = db.prepare('SELECT current_stock FROM raw_materials WHERE id = ?').get(raw_material_id);
+  if (!material) return res.status(404).json({ error: 'Raw material not found' });
+  if (material.current_stock < quantity) {
+    return res.status(400).json({ error: `Cannot return ${quantity} - only ${material.current_stock} in stock` });
+  }
+
+  const amount = quantity * rate;
+  const tx = db.transaction(() => {
+    db.prepare(
+      `INSERT INTO purchase_returns (purchase_id, supplier_id, raw_material_id, quantity, rate, amount, return_date, reason)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(purchase_id || null, supplier_id, raw_material_id, quantity, rate, amount, return_date || new Date().toISOString().slice(0, 10), reason || null);
+
+    db.prepare('UPDATE raw_materials SET current_stock = current_stock - ? WHERE id = ?').run(quantity, raw_material_id);
+  });
+
+  tx();
+  res.json({ success: true, amount });
+});
+
+router.get('/returns', (req, res) => {
+  const rows = db.prepare(
+    `SELECT pr.*, s.name AS supplier_name, m.name AS raw_material_name, m.unit
+     FROM purchase_returns pr
+     JOIN suppliers s ON s.id = pr.supplier_id
+     JOIN raw_materials m ON m.id = pr.raw_material_id
+     ORDER BY pr.return_date DESC, pr.id DESC`
+  ).all();
+  res.json(rows);
 });
 
 module.exports = router;

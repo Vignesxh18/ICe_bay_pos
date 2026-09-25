@@ -210,7 +210,75 @@ router.get('/:id', (req, res) => {
   const items = db.prepare(
     `SELECT bi.*, p.name AS product_name FROM bill_items bi JOIN products p ON p.id = bi.product_id WHERE bi.bill_id = ?`
   ).all(req.params.id);
-  res.json({ ...bill, items });
+  const returns = db.prepare('SELECT * FROM sale_returns WHERE bill_id = ?').all(req.params.id);
+  res.json({ ...bill, items, returns });
+});
+
+// ---------- PARTIAL REFUND (bill stays active, specific item quantity refunded) ----------
+// body: { items: [{ bill_item_id, quantity }], reason }
+router.post('/:id/refund', (req, res) => {
+  const perms = permissionsFor(req.user.role);
+  if (!perms.canCancelBills) return res.status(403).json({ error: 'You do not have permission to process refunds' });
+
+  const { items, reason } = req.body;
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'At least one item to refund is required' });
+  }
+
+  try {
+    const totalRefund = { amount: 0 };
+
+    const tx = db.transaction(() => {
+      const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id);
+      if (!bill) throw new Error('Bill not found');
+      if (bill.status === 'cancelled') throw new Error('Cannot refund a cancelled bill');
+
+      for (const refundItem of items) {
+        const billItem = db.prepare('SELECT * FROM bill_items WHERE id = ? AND bill_id = ?').get(refundItem.bill_item_id, req.params.id);
+        if (!billItem) throw new Error(`Bill item ${refundItem.bill_item_id} not found on this bill`);
+        if (refundItem.quantity > billItem.quantity) throw new Error(`Cannot refund more than was sold (${billItem.quantity})`);
+
+        const alreadyRefunded = db.prepare(
+          'SELECT COALESCE(SUM(quantity), 0) AS total FROM sale_returns WHERE bill_item_id = ?'
+        ).get(billItem.id).total;
+        if (alreadyRefunded + refundItem.quantity > billItem.quantity) {
+          throw new Error(`Refund would exceed quantity sold for this item`);
+        }
+
+        // Restore stock proportionally via the product's recipe
+        const product = db.prepare('SELECT output_qty FROM products WHERE id = ?').get(billItem.product_id);
+        const outputQty = (product && product.output_qty) || 1;
+        const batchFraction = refundItem.quantity / outputQty;
+        const recipeRows = db.prepare('SELECT raw_material_id, quantity_required FROM recipes WHERE product_id = ?').all(billItem.product_id);
+        for (const r of recipeRows) {
+          db.prepare('UPDATE raw_materials SET current_stock = current_stock + ? WHERE id = ?')
+            .run(r.quantity_required * batchFraction, r.raw_material_id);
+        }
+
+        // Refund amount is proportional to the price paid for this line
+        const unitPrice = billItem.quantity > 0 ? billItem.price / billItem.quantity : 0;
+        const refundAmount = unitPrice * refundItem.quantity;
+        totalRefund.amount += refundAmount;
+
+        db.prepare(
+          `INSERT INTO sale_returns (bill_id, bill_item_id, product_id, quantity, refund_amount, reason, return_date, user_id, username)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ).run(
+          req.params.id, billItem.id, billItem.product_id, refundItem.quantity, refundAmount,
+          reason || null, new Date().toISOString().slice(0, 10), req.user.id, req.user.username
+        );
+      }
+    });
+
+    tx();
+
+    db.prepare('INSERT INTO audit_log (user_id, username, action, reference, amount, reason) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(req.user.id, req.user.username, 'Sale Refund', `Bill #${req.params.id}`, totalRefund.amount, reason || null);
+
+    res.json({ success: true, refund_amount: totalRefund.amount });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to process refund' });
+  }
 });
 
 // Printable receipt - narrow thermal-printer-style layout, opens in new tab
@@ -286,6 +354,15 @@ router.get('/', (req, res) => {
   const rows = db.prepare(
     `SELECT * FROM bills WHERE date(bill_date) = ? AND status = 'active' ORDER BY bill_date DESC`
   ).all(date);
+
+  const itemsStmt = db.prepare(
+    `SELECT bi.quantity, p.name FROM bill_items bi JOIN products p ON p.id = bi.product_id WHERE bi.bill_id = ?`
+  );
+  for (const bill of rows) {
+    const items = itemsStmt.all(bill.id);
+    bill.item_summary = items.map(i => `${i.name} x${i.quantity}`).join(', ');
+  }
+
   const totalSales = rows.reduce((s, b) => s + b.total_amount, 0);
   res.json({ date, bills: rows, total_sales: totalSales, bill_count: rows.length });
 });

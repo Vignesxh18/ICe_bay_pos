@@ -212,6 +212,47 @@ router.get('/stock/:materialId/ledger', (req, res) => {
 
 module.exports = router;
 
+// ---------- COMPLETE PROFIT & LOSS ----------
+router.get('/pnl', (req, res) => {
+  const { from, to } = dateRange(req);
+
+  const bills = db.prepare(`SELECT * FROM bills WHERE date(bill_date) BETWEEN ? AND ? AND status = 'active'`).all(from, to);
+  const grossSales = bills.reduce((s, b) => s + b.subtotal, 0);
+  const discounts = bills.reduce((s, b) => s + b.discount, 0);
+  const netSales = bills.reduce((s, b) => s + b.total_amount, 0);
+
+  const billIds = bills.map(b => b.id);
+  let cogs = 0;
+  if (billIds.length > 0) {
+    const placeholders = billIds.map(() => '?').join(',');
+    cogs = db.prepare(`SELECT COALESCE(SUM(cost_price), 0) AS total FROM bill_items WHERE bill_id IN (${placeholders})`).get(...billIds).total;
+  }
+
+  const refunds = db.prepare(
+    `SELECT COALESCE(SUM(refund_amount), 0) AS total FROM sale_returns WHERE return_date BETWEEN ? AND ?`
+  ).get(from, to).total;
+
+  const grossProfit = netSales - refunds - cogs;
+
+  const expenses = db.prepare(
+    `SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE expense_date BETWEEN ? AND ?`
+  ).get(from, to).total;
+
+  const netProfit = grossProfit - expenses;
+
+  res.json({
+    from, to,
+    gross_sales: grossSales,
+    discounts,
+    net_sales: netSales,
+    refunds,
+    cogs,
+    gross_profit: grossProfit,
+    expenses,
+    net_profit: netProfit
+  });
+});
+
 // ---------- CSV EXPORT ----------
 function toCsv(rows, columns) {
   const header = columns.map(c => c.label).join(',');

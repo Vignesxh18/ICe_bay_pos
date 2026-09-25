@@ -130,10 +130,33 @@ router.post('/products', (req, res) => {
 router.put('/products/:id', (req, res) => {
   const { name, category, selling_price, output_qty, recipe } = req.body;
   const productId = req.params.id;
+  const changedBy = req.user ? req.user.username : null;
+  const today = new Date().toISOString().slice(0, 10);
 
   const tx = db.transaction(() => {
+    const existing = db.prepare('SELECT selling_price FROM products WHERE id = ?').get(productId);
+
+    // Log price change if the selling price actually changed
+    if (existing && Number(existing.selling_price) !== Number(selling_price)) {
+      db.prepare('INSERT INTO price_history (product_id, old_price, new_price, changed_by) VALUES (?, ?, ?, ?)')
+        .run(productId, existing.selling_price, selling_price, changedBy);
+    }
+
     db.prepare('UPDATE products SET name = ?, category = ?, selling_price = ?, output_qty = ? WHERE id = ?')
       .run(name, category, selling_price, output_qty, productId);
+
+    // Archive the current recipe into recipe_history before replacing it, so old bills'
+    // cost snapshots can always be cross-checked against what the recipe actually was
+    const currentRecipe = db.prepare('SELECT raw_material_id, quantity_required FROM recipes WHERE product_id = ?').all(productId);
+    if (currentRecipe.length > 0) {
+      const archiveRecipe = db.prepare(
+        'INSERT INTO recipe_history (product_id, raw_material_id, quantity_required, effective_to, changed_by) VALUES (?, ?, ?, ?, ?)'
+      );
+      for (const r of currentRecipe) {
+        archiveRecipe.run(productId, r.raw_material_id, r.quantity_required, today, changedBy);
+      }
+    }
+
     db.prepare('DELETE FROM recipes WHERE product_id = ?').run(productId);
     if (Array.isArray(recipe)) {
       const insertRecipe = db.prepare(
@@ -149,6 +172,20 @@ router.put('/products/:id', (req, res) => {
 
   tx();
   res.json({ success: true });
+});
+
+router.get('/products/:id/price-history', (req, res) => {
+  const rows = db.prepare('SELECT * FROM price_history WHERE product_id = ? ORDER BY changed_at DESC').all(req.params.id);
+  res.json(rows);
+});
+
+router.get('/products/:id/recipe-history', (req, res) => {
+  const rows = db.prepare(
+    `SELECT rh.*, m.name AS raw_material_name, m.unit
+     FROM recipe_history rh JOIN raw_materials m ON m.id = rh.raw_material_id
+     WHERE rh.product_id = ? ORDER BY rh.effective_to DESC`
+  ).all(req.params.id);
+  res.json(rows);
 });
 
 router.delete('/products/:id', (req, res) => {
